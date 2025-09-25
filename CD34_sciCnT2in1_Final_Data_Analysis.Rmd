@@ -1,0 +1,1549 @@
+---
+title: "CD34_sciCnT2in1_Final_Data_Analysis"
+output: html_document
+date: "2025-09-03"
+---
+
+```{r}
+#This series of commands installs the necessary packages for this notebook
+
+#install.packages("devtools", lib = install_path)
+#install.packages("Seurat", lib = install_path)
+# Install ArchR
+#if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager", lib = install_path)
+#devtools::install_github("GreenleafLab/ArchR", ref = "master", 
+#                         repos = BiocManager::repositories(), lib = install_path)
+#install.packages("repr", lib = install_path)
+#ArchR::installExtraPackages()
+#devtools::install_github("immunogenomics/harmony", lib = install_path)
+# Install GenomicRanges and rtracklayer if not already installed
+#if (!requireNamespace("GenomicRanges", quietly = TRUE)) {
+#  install.packages("BiocManager")
+#  BiocManager::install("GenomicRanges")
+#}
+#if (!requireNamespace("rtracklayer", quietly = TRUE)) {
+#  BiocManager::install("rtracklayer")
+#}
+#install.packages("viridis")
+
+```
+
+```{r}
+#Load the necessary packages for this notebook
+
+Sys.unsetenv("DISPLAY")
+
+suppressPackageStartupMessages({
+    library(ArchR)
+    library(parallel)
+    library(rtracklayer)
+    library(repr)
+    library(dplyr)
+    library(plyr)
+    library(Seurat)
+    library(ggplot2)
+    library(GenomicRanges)
+    library(rtracklayer)
+
+})
+set.seed(1)
+
+# Set default plot size
+options(repr.plot.width=10, repr.plot.height=10)
+```
+
+```{r}
+#Set threads and load the hg38 genome
+addArchRThreads(threads = 24)
+addArchRGenome('hg38')
+```
+
+
+```{r}
+#set project name and set sample names to the H3K27me3.bed.gz files
+
+proj_name = 'H3K27me3_CD34_sciCnT2in1'
+
+sample_name1= 'K27me3_Batch1_Final'
+sample_name2= 'K27me3_Batch2_Final'
+sample_name3= 'K27me3_Batch3_Final'
+sample_name4= 'K27me3_Batch4_2in1_wCUTAC_Final'
+sample_name5= 'K27me3_Batch7_2in1_wCUTAC_Final'
+sample_name6= 'K27me3_Batch8_2in1_wCUTAC_Final'
+sample_name7= 'K27me3_Batch9_2in1_wCUTAC_Final'
+sample_name8= 'K27me3_Batch10_Final'
+
+```
+
+
+```{r}
+#For H3K27me3 set tilematparams (genomics bin size) to 50000 (50kb)
+tilematparams <- list(50000, FALSE)
+names(tilematparams) <- c("tileSize", "binarize")
+```
+
+```{r}
+#Set the directory to the location of the bed files, and specify the input files. 
+
+#wdir <- '/bedfile/location/'
+wdir <- 'Final_hg38_Aligned_BED_Files/Batch_Beds_K27me3/'
+
+# vector of your dataset name variables
+sample_names <- c(sample_name1, sample_name2, sample_name3, sample_name4, sample_name5, sample_name6, sample_name7, sample_name8)
+
+# build the full paths and name them
+inputFiles <- setNames(
+  paste0(wdir, sample_names, ".bed.gz"),
+  sample_names
+)
+
+out_dir <- wdir
+# dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+setwd(out_dir)
+
+```
+
+```{r}
+#Check the input paths
+inputFiles
+```
+
+```{r}
+# Create Arrow files
+ArrowFiles <- createArrowFiles(
+    inputFiles = inputFiles,
+    sampleNames = names(inputFiles),
+    #filterTSS = 1, # depricaTRUEd to minTSS
+    minTSS = 0, #Dont set this too high because you can always increase later
+    #filterFrags = 3000, # depricated to minFrags
+    minFrags = 100,
+    maxFrags = Inf,
+    addTileMat = TRUE,
+    addGeneScoreMat = FALSE,
+    excludeChr = c('chrM'),
+    TileMatParams = tilematparams#,
+    #force = TRUE
+    #removeFilteredCells = TRUE # seems to be removed with the other filter args
+)
+```
+```{r}
+# Combine Arrow files from H3K27me3 into proj_K27me3
+arrows_CD34_1 = '/bedfile/location/ArrowFiles/K27me3_Batch1_Final.arrow'
+arrows_CD34_2 = '/bedfile/location/ArrowFiles/K27me3_Batch2_Final.arrow'
+arrows_CD34_3 = '/bedfile/location/ArrowFiles/K27me3_Batch3_Final.arrow'
+arrows_CD34_4 = '/bedfile/location/ArrowFiles/K27me3_Batch4_2in1_wCUTAC_Final.arrow'
+arrows_CD34_5 = '/bedfile/location/ArrowFiles/K27me3_Batch7_2in1_wCUTAC_Final.arrow'
+arrows_CD34_6 = '/bedfile/location/ArrowFiles/K27me3_Batch8_2in1_wCUTAC_Final.arrow'
+arrows_CD34_7 = '/bedfile/location/ArrowFiles/K27me3_Batch9_2in1_wCUTAC_Final.arrow'
+arrows_CD34_8 = '/bedfile/location/ArrowFiles/K27me3_Batch10_Final.arrow'
+
+
+inputFiles <- structure(c(arrows_CD34_1,
+                          arrows_CD34_2,
+                          arrows_CD34_3,
+                          arrows_CD34_4,
+                          arrows_CD34_5,
+                          arrows_CD34_6,
+                          arrows_CD34_7,
+                          arrows_CD34_8,
+                          ),
+                        .Names = c('CD34_1',
+                                   'CD34_2',
+                                   'CD34_3',
+                                   'CD34_4',
+                                   'CD34_5',
+                                   'CD34_6',
+                                   'CD34_7',
+                                   'CD34_8'))
+
+proj <- ArchRProject(
+            ArrowFiles = inputFiles,
+            outputDirectory = out_dir,
+            copyArrows = FALSE,
+            showLogo = FALSE
+)
+```
+
+```{r}
+# Combine Arrow files from H3K27me3 into proj_K27me3
+arrows_CD34_1 = 'ArrowFiles/K27me3_Batch1_Final.arrow'
+arrows_CD34_2 = 'ArrowFiles/K27me3_Batch2_Final.arrow'
+arrows_CD34_3 = 'ArrowFiles/K27me3_Batch3_Final.arrow'
+arrows_CD34_4 = 'ArrowFiles/K27me3_Batch4_2in1_wCUTAC_Final.arrow'
+arrows_CD34_5 = 'ArrowFiles/K27me3_Batch7_2in1_wCUTAC_Final.arrow'
+arrows_CD34_6 = 'ArrowFiles/K27me3_Batch8_2in1_wCUTAC_Final.arrow'
+arrows_CD34_7 = 'ArrowFiles/K27me3_Batch9_2in1_wCUTAC_Final.arrow'
+arrows_CD34_8 = 'ArrowFiles/K27me3_Batch10_Final.arrow'
+
+
+inputFiles <- structure(c(arrows_CD34_1,
+                          arrows_CD34_2,
+                          arrows_CD34_3,
+                          arrows_CD34_4,
+                          arrows_CD34_5,
+                          arrows_CD34_6,
+                          arrows_CD34_7,
+                          arrows_CD34_8
+                          ),
+                        .Names = c('CD34_1',
+                                   'CD34_2',
+                                   'CD34_3',
+                                   'CD34_4',
+                                   'CD34_5',
+                                   'CD34_6',
+                                   'CD34_7',
+                                   'CD34_8'))
+
+proj <- ArchRProject(
+            ArrowFiles = inputFiles,
+            outputDirectory = out_dir,
+            copyArrows = FALSE,
+            showLogo = FALSE
+)
+```
+```{r}
+#To avoid splitting the data based on the ratio fo chrX and chrY in the donor, this script removes the chrY and chrX from the tile matrix
+
+genome_annotation <- getGenomeAnnotation(proj)
+existing_blacklist <- genome_annotation$blacklist
+
+hg38_noM_noY_noX = createGenomeAnnotation(
+  #genome = BSgenome.Hsapiens.UCSC.hg38,
+  genome = 'hg38',
+  #chromSizes = getChromSizes("hg38"),
+  blacklist = existing_blacklist,
+  filter = TRUE,
+  filterChr = c("chrM", "chrY", "chrX")
+  #excludeChr = c('chrM')
+)
+genomeAnnotation = hg38_noM_noY_noX
+
+# Create a new ArchR project with the updated genome annotation and blacklist
+proj <- ArchRProject(
+  ArrowFiles = getArrowFiles(proj),  # Use the Arrow files from the existing project
+  outputDirectory = "ArrowFiles/",
+  #outputDirectory = "/bedfile/location/",  # Path to the output directory for the new project
+  genomeAnnotation = hg38_noM_noY_noX,  # The updated genome annotation with the new blacklist
+  copyArrows = FALSE  # Set to FALSE so that you can update matrices first
+)
+
+
+# Update the TileMatrix to incorporate the new blacklist
+proj = addTileMatrix(
+    input = proj,
+    tileSize = 50000, 
+    binarize = FALSE, 
+    force = TRUE
+            )
+
+```
+
+
+
+
+
+```{r}
+# SVD, UMAP, and Clustering including Batch Correction using Harmony
+
+UMAP_Harmony_clusters = function(proj){
+    #SVD
+    proj <- addIterativeLSI(
+        ArchRProj = proj,
+        useMatrix = "TileMatrix", 
+        name = "IterativeLSI", 
+        iterations = 2, 
+        dimsToUse = 1:15, 
+        varFeatures = 200000, 
+        clusterParams = list( #See Seurat::FindClusters,
+            resolution = c(0.1, 0.3), 
+            sampleCells = 8000, 
+            n.start = 10), 
+        outlierQuantiles = c(0.025, 0.975), 
+        verbose = FALSE,
+        force=TRUE
+    )
+    #UMAP
+    proj <- addUMAP(
+        ArchRProj = proj,
+        reducedDims = "IterativeLSI",
+        name = "UMAP",
+        nNeighbors = 40,
+        minDist = 0.4,
+        metric = "cosine",
+        verbose = FALSE,
+        force = TRUE
+    )
+    
+    proj <- addHarmony(
+      ArchRProj = proj,
+      reducedDims = "IterativeLSI", # The dimension reduction to use (e.g., IterativeLSI or PCA)
+      name = "Harmony",             # Name of the batch-corrected reducedDims to save
+      groupBy = "Sample",            # The batch variable to correct
+      force = TRUE
+    )
+    
+    # Add UMAP using Harmony-Corrected Dimensions
+    proj <- addUMAP(
+      ArchRProj = proj,
+      reducedDims = "Harmony", # Use the Harmony-corrected reducedDims
+      name = "UMAP_Harmony",   # Name for the UMAP embedding
+      nNeighbors = 40,         # Number of neighbors
+      minDist = 0.4,           # Minimum distance for UMAP
+      metric = "cosine",        # Distance metric for UMAP
+      force = TRUE
+    )
+    proj <- addClusters(input = proj, 
+                            method = "Seurat", 
+                            name = "Clusters", 
+                            reducedDims = "Harmony",  
+                            resolution = 20, 
+                            maxClusters = 100,
+                            verbose = FALSE,
+                            force=TRUE
+                           )
+    
+    #Save
+    #p1 <- plotEmbedding(ArchRProj = proj, colorBy = "cellColData", name = "Clusters", embedding = "UMAP")
+    #plotPDF(p1, name = "Plot-UMAP-Sample-Clusters_1.pdf", ArchRProj = proj, addDOC = FALSE, width = 5, height = 5)
+    return(proj)
+}
+```
+
+
+```{r}
+#UMAP + clustering over all cells and catalogue
+proj = UMAP_Harmony_clusters(proj)
+
+```
+
+```{r}
+#Visualize clusters
+plotEmbedding(ArchRProj = proj, colorBy = "cellColData", 
+              name = "Sample", 
+              embedding = "UMAP_Harmony", 
+              size =0.5, 
+              #pal= paletteContinuous(), 
+              plotAs= "points", 
+              #imputeWeights = getImputeWeights(proj),
+              colorTitle = 'mark'
+             )+theme_void()+theme(plot.title = element_blank())#+ NoLegend()
+```
+
+
+```{r}
+# Function to assign cluster names from barcode table to ArchR project
+add_clusters_to_proj <- function(proj, cluster_file) {
+    # Load barcode-to-cluster mapping
+    cluster_data <- read.csv(cluster_file, stringsAsFactors = FALSE)
+    
+    # Extract barcodes from ArchR project cellNames (assumes format: sample#barcode)
+    barcode_matrix <- data.frame(t(data.frame(strsplit(proj$cellNames, "#"))[2,]))
+    colnames(barcode_matrix) <- "barcode"
+    proj$barcode <- barcode_matrix$barcode
+
+    # Merge cluster assignments based on barcode
+    matched_clusters <- cluster_data[match(proj$barcode, cluster_data$barcode), ]
+    
+    # Assign cluster name to new metadata field
+    proj$NewClusters <- matched_clusters$cluster_name
+    
+    return(proj)
+}
+
+# File path to your barcode-cluster CSV
+cluster_file <- "K27me3_Cluster_Barcodes.csv"
+
+# Apply the function
+proj <- add_clusters_to_proj(proj, cluster_file)
+
+```
+
+
+```{r}
+#Visualize clusters
+plotEmbedding(ArchRProj = proj, colorBy = "cellColData", 
+              name = "NewClusters", 
+              embedding = "UMAP_Harmony", 
+              size =0.5, 
+              #pal= paletteContinuous(), 
+              plotAs= "points", 
+              #imputeWeights = getImputeWeights(proj),
+              colorTitle = 'mark'
+             )+theme_void()+theme(plot.title = element_blank())#+ NoLegend()
+```
+```{r}
+# Get the total number of cells in the ArchR project
+num_cells <- nCells(proj)
+
+# Print the number of cells
+cat("Number of cells in the ArchR project:", num_cells, "\n")
+
+```
+
+
+
+```{r}
+proj <- addGeneScoreMatrix(proj, force = TRUE) #useTSS = FALSE, 
+
+proj <- addImputeWeights(proj)
+```
+
+
+```{r}
+# Once Doublets are removed and you are confident in the projection and cluster calls you will want to save the project
+subsetArchRProject(
+  ArchRProj = proj,
+  cells = getCellNames(proj),
+  outputDirectory = "K27me3_Final_ArchR/",
+  dropCells = TRUE,
+  logFile = NULL,
+  threads = getArchRThreads(),
+  force = TRUE
+)
+```
+```{r}
+#set project name and set sample names to the H3K27me3.bed.gz files
+
+proj_name = 'H3K4me123_CD34_sciCnT2in1'
+
+sample_name1= 'K4me123_Batch1_Final'
+sample_name2= 'K4me123_Batch2_Final'
+sample_name3= 'K4me123_Batch3_Final'
+sample_name4= 'K4me123_Batch4_Final'
+sample_name5= 'K4me123_Batch5_Final'
+sample_name6= 'K4me123_Batch6_Final'
+sample_name7= 'K4me123_Batch7_2in1_wCUTAC_Final'
+sample_name8= 'K4me123_Batch8_2in1_wCUTAC_Final'
+sample_name9= 'K4me123_Batch9_2in1_wCUTAC_Final'
+sample_name10= 'K4me123_Batch10_Final'
+
+```
+
+
+```{r}
+#For H3K4me123 set tilematparams (genomics bin size) to 5000 (5kb)
+tilematparams <- list(5000, FALSE)
+names(tilematparams) <- c("tileSize", "binarize")
+```
+
+```{r}
+#Set the directory to the location of the bed files, and specify the input files. 
+
+#wdir <- '/bedfile/location/'
+wdir <- 'Final_hg38_Aligned_BED_Files/Batch_Beds_K4me123/'
+
+# vector of your dataset name variables
+sample_names <- c(sample_name1, sample_name2, sample_name3, sample_name4, sample_name5, sample_name6, sample_name7, sample_name8, sample_name9, sample_name10)
+
+# build the full paths and name them
+inputFiles <- setNames(
+  paste0(wdir, sample_names, ".bed.gz"),
+  sample_names
+)
+
+out_dir <- wdir
+# dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+setwd(out_dir)
+
+```
+
+```{r}
+#Check the input paths
+inputFiles
+```
+
+```{r}
+# Create Arrow files
+ArrowFiles <- createArrowFiles(
+    inputFiles = inputFiles,
+    sampleNames = names(inputFiles),
+    #filterTSS = 1, # depricaTRUEd to minTSS
+    minTSS = 0, #Dont set this too high because you can always increase later
+    #filterFrags = 3000, # depricated to minFrags
+    minFrags = 100,
+    maxFrags = Inf,
+    addTileMat = TRUE,
+    addGeneScoreMat = FALSE,
+    excludeChr = c('chrM'),
+    TileMatParams = tilematparams#,
+    #force = TRUE
+    #removeFilteredCells = TRUE # seems to be removed with the other filter args
+)
+```
+
+```{r}
+# Combine Arrow files from H3K27me3 into proj_K27me3
+arrows_CD34_1 = '/bedfile/location/ArrowFiles/K4me123_Batch1_Full.arrow'
+arrows_CD34_2 = '/bedfile/location/ArrowFiles/K4me123_Batch2_Full.arrow'
+arrows_CD34_3 = '/bedfile/location/ArrowFiles/K4me123_Batch3_Full.arrow'
+arrows_CD34_4 = '/bedfile/location/ArrowFiles/K4me123_Batch4_Full.arrow'
+arrows_CD34_5 = '/bedfile/location/ArrowFiles/K4me123_Batch5_Full.arrow'
+arrows_CD34_6 = '/bedfile/location/ArrowFiles/K4me123_Batch6_Full.arrow'
+arrows_CD34_7 = '/bedfile/location/ArrowFiles/K4me123_Batch7_2in1_wCUTAC_Full.arrow'
+arrows_CD34_8 = '/bedfile/location/ArrowFiles/K4me123_Batch8_2in1_wCUTAC_Full.arrow'
+arrows_CD34_9 = '/bedfile/location/ArrowFiles/K4me123_Batch9_2in1_wCUTAC_Full.arrow'
+arrows_CD34_10 = '/bedfile/location/ArrowFiles/K4me123_Batch10_Full.arrow'
+
+
+inputFiles <- structure(c(arrows_CD34_1,
+                          arrows_CD34_2,
+                          arrows_CD34_3,
+                          arrows_CD34_4,
+                          arrows_CD34_5,
+                          arrows_CD34_6,
+                          arrows_CD34_7,
+                          arrows_CD34_8,
+                          arrows_CD34_9,
+                          arrows_CD34_10
+                          ),
+                        .Names = c('CD34_1',
+                                   'CD34_2',
+                                   'CD34_3',
+                                   'CD34_4',
+                                   'CD34_5',
+                                   'CD34_6',
+                                   'CD34_7',
+                                   'CD34_8',
+                                   'CD34_9',
+                                   'CD34_10'))
+
+proj <- ArchRProject(
+            ArrowFiles = inputFiles,
+            outputDirectory = out_dir,
+            copyArrows = FALSE,
+            showLogo = FALSE
+)
+```
+
+```{r}
+# Combine Arrow files from H3K27me3 into proj_K27me3
+arrows_CD34_1 = 'ArrowFiles/K4me123_Batch1_Final.arrow'
+arrows_CD34_2 = 'ArrowFiles/K4me123_Batch2_Final.arrow'
+arrows_CD34_3 = 'ArrowFiles/K4me123_Batch3_Final.arrow'
+arrows_CD34_4 = 'ArrowFiles/K4me123_Batch4_Final.arrow'
+arrows_CD34_5 = 'ArrowFiles/K4me123_Batch5_Final.arrow'
+arrows_CD34_6 = 'ArrowFiles/K4me123_Batch6_Final.arrow'
+arrows_CD34_7 = 'ArrowFiles/K4me123_Batch7_2in1_wCUTAC_Final.arrow'
+arrows_CD34_8 = 'ArrowFiles/K4me123_Batch8_2in1_wCUTAC_Final.arrow'
+arrows_CD34_9 = 'ArrowFiles/K4me123_Batch9_2in1_wCUTAC_Final.arrow'
+arrows_CD34_10 = 'ArrowFiles/K4me123_Batch10_Final.arrow'
+
+
+inputFiles <- structure(c(arrows_CD34_1,
+                          arrows_CD34_2,
+                          arrows_CD34_3,
+                          arrows_CD34_4,
+                          arrows_CD34_5,
+                          arrows_CD34_6,
+                          arrows_CD34_7,
+                          arrows_CD34_8,
+                          arrows_CD34_9,
+                          arrows_CD34_10
+                          ),
+                        .Names = c('CD34_1',
+                                   'CD34_2',
+                                   'CD34_3',
+                                   'CD34_4',
+                                   'CD34_5',
+                                   'CD34_6',
+                                   'CD34_7',
+                                   'CD34_8',
+                                   'CD34_9',
+                                   'CD34_10'))
+
+proj <- ArchRProject(
+            ArrowFiles = inputFiles,
+            outputDirectory = out_dir,
+            copyArrows = FALSE,
+            showLogo = FALSE
+)
+```
+
+```{r}
+#Here we use the same custom blacklist generated from the H3K4me123 data. 
+
+# Specify the path to your BED file
+#bed_file <- "/location/of/peakfiles/K4me123_R8_Master_Blacklist_5E-15.bed"
+bed_file <- "K4me123_R8_Master_Blacklist_5E-15.bed"
+
+# Read the BED file into a data frame
+bed_df <- read.table(bed_file, header = FALSE, sep = "\t")
+
+# Assign column names to the BED data frame
+colnames(bed_df) <- c("chr", "start", "end")
+
+# Create a GRanges object, defaulting the strand to "*"
+K4me123_Blacklist_GRanges <- GRanges(
+  seqnames = bed_df$chr,
+  ranges = IRanges(start = bed_df$start, end = bed_df$end),
+  strand = "*"
+)
+# Inspect the GRanges object
+K4me123_Blacklist_GRanges <- keepStandardChromosomes(K4me123_Blacklist_GRanges, pruning.mode = "coarse")
+# Remove "chrM" from GRanges to match the ArchR genome annotation
+valid_chr <- setdiff(seqlevels(K4me123_Blacklist_GRanges), "chrM")
+K4me123_Blacklist_GRanges <- keepSeqlevels(K4me123_Blacklist_GRanges, valid_chr, pruning.mode = "coarse")
+seqlevels(K4me123_Blacklist_GRanges)  # Check if the chromosome names are consistent with your genome
+#head(K4me123_GRanges)
+# Retrieve the genome annotation and the current blacklist
+genome_annotation <- getGenomeAnnotation(proj)
+existing_blacklist <- genome_annotation$blacklist
+# Combine the existing blacklist with your custom blacklist
+combined_blacklist <- sort(c(existing_blacklist, K4me123_Blacklist_GRanges))
+
+hg38_blacklist = createGenomeAnnotation(
+  genome = "hg38",
+  #chromSizes = getChromSizes("hg38"),
+  blacklist = combined_blacklist,
+  filter = TRUE,
+  filterChr = c("chrM")
+)
+hg38_blacklist$blacklist = combined_blacklist
+genomeAnnotation = hg38_blacklist
+
+
+# Create a new ArchR project with the updated genome annotation and blacklist
+proj <- ArchRProject(
+  ArrowFiles = getArrowFiles(proj),  # Use the Arrow files from the existing project
+  outputDirectory = "ArrowFiles/",
+  #outputDirectory = "/bedfile/location/",  # Path to the output directory for the new project
+  genomeAnnotation = hg38_blacklist,  # The updated genome annotation with the new blacklist
+  copyArrows = FALSE  # Set to FALSE so that you can update matrices first
+)
+
+# Update the TileMatrix to incorporate the new blacklist
+proj = addTileMatrix(
+    input = proj,
+    tileSize = 5000, 
+    binarize = FALSE, 
+    force = TRUE # Use force = TRUE to overwrite the existing matrix with updated blacklist
+)
+```
+
+```{r}
+#UMAP + clustering over all cells and catalogue
+proj = UMAP_Harmony_clusters(proj)
+
+```
+
+```{r}
+#Visualize clusters
+plotEmbedding(ArchRProj = proj, colorBy = "cellColData", 
+              name = "Sample", 
+              embedding = "UMAP_Harmony", 
+              size =0.5, 
+              #pal= paletteContinuous(), 
+              plotAs= "points", 
+              #imputeWeights = getImputeWeights(proj),
+              colorTitle = 'mark'
+             )+theme_void()+theme(plot.title = element_blank())#+ NoLegend()
+```
+
+```{r}
+# Function to assign cluster names from barcode table to ArchR project
+add_clusters_to_proj <- function(proj, cluster_file) {
+    # Load barcode-to-cluster mapping
+    cluster_data <- read.csv(cluster_file, stringsAsFactors = FALSE)
+    
+    # Extract barcodes from ArchR project cellNames (assumes format: sample#barcode)
+    barcode_matrix <- data.frame(t(data.frame(strsplit(proj$cellNames, "#"))[2,]))
+    colnames(barcode_matrix) <- "barcode"
+    proj$barcode <- barcode_matrix$barcode
+
+    # Merge cluster assignments based on barcode
+    matched_clusters <- cluster_data[match(proj$barcode, cluster_data$barcode), ]
+    
+    # Assign cluster name to new metadata field
+    proj$NewClusters <- matched_clusters$cluster_name
+    
+    return(proj)
+}
+
+# File path to your barcode-cluster CSV
+cluster_file <- "K4me123_Cluster_Barcodes.csv"
+
+# Apply the function
+proj <- add_clusters_to_proj(proj, cluster_file)
+
+```
+
+
+```{r}
+#Visualize clusters
+plotEmbedding(ArchRProj = proj, colorBy = "cellColData", 
+              name = "NewClusters", 
+              embedding = "UMAP_Harmony", 
+              size =0.5, 
+              #pal= paletteContinuous(), 
+              plotAs= "points", 
+              #imputeWeights = getImputeWeights(proj),
+              colorTitle = 'mark'
+             )+theme_void()+theme(plot.title = element_blank())#+ NoLegend()
+```
+```{r}
+proj <- addGeneScoreMatrix(proj, force = TRUE) #useTSS = FALSE, 
+
+proj <- addImputeWeights(proj)
+```
+
+
+```{r}
+# Once Doublets are removed and you are confident in the projection and cluster calls you will want to save the project
+subsetArchRProject(
+  ArchRProj = proj,
+  cells = getCellNames(proj),
+  outputDirectory = "K4me123_Final_ArchR/",
+  dropCells = TRUE,
+  logFile = NULL,
+  threads = getArchRThreads(),
+  force = TRUE
+)
+```
+
+
+```{r}
+#set project name and set sample names to the H3K27me3.bed.gz files
+
+proj_name = 'PolII_CUTAC_CD34_sciCnT2in1'
+
+sample_name1= 'CUTAC_Batch3_Final'
+sample_name2= 'CUTAC_Batch4_2in1_wK27me3_wSplit_Final'
+sample_name3= 'CUTAC_Batch7_2in1_wK4me123_wSplit_Final'
+sample_name4= 'CUTAC_Batch7_2in1_wK27me3_wSplit_Final'
+sample_name5= 'CUTAC_Batch8_2in1_wK4me123_wSplit_Final'
+sample_name6= 'CUTAC_Batch8_2in1_wK27me3_wSplit_Final'
+sample_name7= 'CUTAC_Batch9_2in1_wK4me123_wSplit_Final'
+sample_name8= 'CUTAC_Batch9_2in1_wK27me3_wSplit_Final'
+sample_name9= 'CUTAC_Batch10_Final'
+
+```
+
+```{r}
+#For PolII CUTAC set tilematparams (genomics bin size) to 50000 (50kb)
+tilematparams <- list(50000, FALSE)
+names(tilematparams) <- c("tileSize", "binarize")
+```
+
+```{r}
+#Set the directory to the location of the bed files, and specify the input files. 
+
+#wdir <- '/bedfile/location/'
+wdir1 <- 'Final_hg38_Aligned_BED_Files/Batch_Beds_CUTAC/'
+wdir2 <- 'Final_hg38_Aligned_BED_Files/Batch_Beds_CUTAC_wSplit_Combined/'
+
+# vector of your dataset name variables
+sample_names_1 <- c(sample_name1, sample_name9)
+sample_names_2 <- c(sample_name2, sample_name3, sample_name4, sample_name5, sample_name6, sample_name7, sample_name8)
+
+# Build the full paths and assign names
+files1 <- setNames(
+  paste0(wdir1, sample_names_1, ".bed.gz"),
+  sample_names_1
+)
+
+files2 <- setNames(
+  paste0(wdir2, sample_names_2, ".bed.gz"),
+  sample_names_2
+)
+
+# Combine both into a single named vector
+inputFiles <- c(files1, files2)
+
+# Set the output directory
+out_dir <- wdir1
+# dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+setwd(out_dir)
+
+```
+
+```{r}
+#Check the input paths
+inputFiles
+```
+
+```{r}
+# Create Arrow files
+ArrowFiles <- createArrowFiles(
+    inputFiles = inputFiles,
+    sampleNames = names(inputFiles),
+    #filterTSS = 1, # depricaTRUEd to minTSS
+    minTSS = 0, #Dont set this too high because you can always increase later
+    #filterFrags = 3000, # depricated to minFrags
+    minFrags = 100,
+    maxFrags = Inf,
+    addTileMat = TRUE,
+    addGeneScoreMat = FALSE,
+    excludeChr = c('chrM'),
+    TileMatParams = tilematparams#,
+    #force = TRUE
+    #removeFilteredCells = TRUE # seems to be removed with the other filter args
+)
+```
+
+```{r}
+# Combine Arrow files from H3K27me3 into proj_K27me3
+arrows_CD34_1 = 'ArrowFiles/CUTAC_Batch3_Final.arrow'
+arrows_CD34_2 = 'ArrowFiles/CUTAC_Batch4_2in1_wK27me3_wSplit_Final.arrow'
+arrows_CD34_3 = 'ArrowFiles/CUTAC_Batch7_2in1_wK4me123_wSplit_Final.arrow'
+arrows_CD34_4 = 'ArrowFiles/CUTAC_Batch7_2in1_wK27me3_wSplit_Final.arrow'
+arrows_CD34_5 = 'ArrowFiles/CUTAC_Batch8_2in1_wK4me123_wSplit_Final.arrow'
+arrows_CD34_6 = 'ArrowFiles/CUTAC_Batch8_2in1_wK27me3_wSplit_Final.arrow'
+arrows_CD34_7 = 'ArrowFiles/CUTAC_Batch9_2in1_wK4me123_wSplit_Final.arrow'
+arrows_CD34_8 = 'ArrowFiles/CUTAC_Batch9_2in1_wK27me3_wSplit_Final.arrow'
+arrows_CD34_9 = 'ArrowFiles/CUTAC_Batch10_Final.arrow'
+
+
+inputFiles <- structure(c(arrows_CD34_1,
+                          arrows_CD34_2,
+                          arrows_CD34_3,
+                          arrows_CD34_4,
+                          arrows_CD34_5,
+                          arrows_CD34_6,
+                          arrows_CD34_7,
+                          arrows_CD34_8,
+                          arrows_CD34_9
+                          ),
+                        .Names = c('CD34_1',
+                                   'CD34_2',
+                                   'CD34_3',
+                                   'CD34_4',
+                                   'CD34_5',
+                                   'CD34_6',
+                                   'CD34_7',
+                                   'CD34_8',
+                                   'CD34_9'))
+
+proj <- ArchRProject(
+            ArrowFiles = inputFiles,
+            outputDirectory = out_dir,
+            copyArrows = FALSE,
+            showLogo = FALSE
+)
+```
+
+
+```{r}
+#Here we use the same custom blacklist generated from the H3K4me123 data. 
+
+# Specify the path to your BED file
+#bed_file <- "/location/of/peakfiles/K4me123_R8_Master_Blacklist_5E-15.bed"
+bed_file <- "K4me123_R8_Master_Blacklist_5E-15.bed"
+
+# Read the BED file into a data frame
+bed_df <- read.table(bed_file, header = FALSE, sep = "\t")
+
+# Assign column names to the BED data frame
+colnames(bed_df) <- c("chr", "start", "end")
+
+# Create a GRanges object, defaulting the strand to "*"
+K4me123_Blacklist_GRanges <- GRanges(
+  seqnames = bed_df$chr,
+  ranges = IRanges(start = bed_df$start, end = bed_df$end),
+  strand = "*"
+)
+# Inspect the GRanges object
+K4me123_Blacklist_GRanges <- keepStandardChromosomes(K4me123_Blacklist_GRanges, pruning.mode = "coarse")
+# Remove "chrM" from GRanges to match the ArchR genome annotation
+valid_chr <- setdiff(seqlevels(K4me123_Blacklist_GRanges), "chrM")
+K4me123_Blacklist_GRanges <- keepSeqlevels(K4me123_Blacklist_GRanges, valid_chr, pruning.mode = "coarse")
+seqlevels(K4me123_Blacklist_GRanges)  # Check if the chromosome names are consistent with your genome
+#head(K4me123_GRanges)
+# Retrieve the genome annotation and the current blacklist
+genome_annotation <- getGenomeAnnotation(proj)
+existing_blacklist <- genome_annotation$blacklist
+# Combine the existing blacklist with your custom blacklist
+combined_blacklist <- sort(c(existing_blacklist, K4me123_Blacklist_GRanges))
+
+hg38_blacklist = createGenomeAnnotation(
+  genome = "hg38",
+  #chromSizes = getChromSizes("hg38"),
+  blacklist = combined_blacklist,
+  filter = TRUE,
+  filterChr = c("chrM")
+)
+hg38_blacklist$blacklist = combined_blacklist
+genomeAnnotation = hg38_blacklist
+
+
+# Create a new ArchR project with the updated genome annotation and blacklist
+proj <- ArchRProject(
+  ArrowFiles = getArrowFiles(proj),  # Use the Arrow files from the existing project
+  outputDirectory = "ArrowFiles/",
+  #outputDirectory = "/bedfile/location/",  # Path to the output directory for the new project
+  genomeAnnotation = hg38_blacklist,  # The updated genome annotation with the new blacklist
+  copyArrows = FALSE  # Set to FALSE so that you can update matrices first
+)
+
+# Update the TileMatrix to incorporate the new blacklist
+proj = addTileMatrix(
+    input = proj,
+    tileSize = 50000, 
+    binarize = FALSE, 
+    force = TRUE # Use force = TRUE to overwrite the existing matrix with updated blacklist
+)
+```
+
+```{r}
+#UMAP + clustering over all cells and catalogue
+proj = UMAP_Harmony_clusters(proj)
+
+```
+
+```{r}
+#Visualize clusters
+plotEmbedding(ArchRProj = proj, colorBy = "cellColData", 
+              name = "Sample", 
+              embedding = "UMAP_Harmony", 
+              size =0.5, 
+              #pal= paletteContinuous(), 
+              plotAs= "points", 
+              #imputeWeights = getImputeWeights(proj),
+              colorTitle = 'mark'
+             )+theme_void()+theme(plot.title = element_blank())#+ NoLegend()
+```
+
+
+
+```{r}
+# Function to assign cluster names from barcode table to ArchR project
+add_clusters_to_proj <- function(proj, cluster_file) {
+    # Load barcode-to-cluster mapping
+    cluster_data <- read.csv(cluster_file, stringsAsFactors = FALSE)
+    
+    # Extract barcodes from ArchR project cellNames (assumes format: sample#barcode)
+    barcode_matrix <- data.frame(t(data.frame(strsplit(proj$cellNames, "#"))[2,]))
+    colnames(barcode_matrix) <- "barcode"
+    proj$barcode <- barcode_matrix$barcode
+
+    # Merge cluster assignments based on barcode
+    matched_clusters <- cluster_data[match(proj$barcode, cluster_data$barcode), ]
+    
+    # Assign cluster name to new metadata field
+    proj$NewClusters <- matched_clusters$cluster_name
+    
+    return(proj)
+}
+
+# File path to your barcode-cluster CSV
+cluster_file <- "CUTAC_Cluster_Barcodes.csv"
+
+# Apply the function
+proj <- add_clusters_to_proj(proj, cluster_file)
+
+```
+
+
+```{r}
+#Visualize clusters
+plotEmbedding(ArchRProj = proj, colorBy = "cellColData", 
+              name = "NewClusters", 
+              embedding = "UMAP_Harmony", 
+              size =0.5, 
+              #pal= paletteContinuous(), 
+              plotAs= "points", 
+              #imputeWeights = getImputeWeights(proj),
+              colorTitle = 'mark'
+             )+theme_void()+theme(plot.title = element_blank())#+ NoLegend()
+```
+```{r}
+proj <- addGeneScoreMatrix(proj, force = TRUE) #useTSS = FALSE, 
+
+proj <- addImputeWeights(proj)
+```
+
+
+```{r}
+# Once Doublets are removed and you are confident in the projection and cluster calls you will want to save the project
+subsetArchRProject(
+  ArchRProj = proj,
+  cells = getCellNames(proj),
+  outputDirectory = "CUTAC_Final_ArchR/",
+  dropCells = TRUE,
+  logFile = NULL,
+  threads = getArchRThreads(),
+  force = TRUE
+)
+```
+
+
+```{r}
+proj <- loadArchRProject(path = "CUTAC_Final_ArchR/", force = FALSE, showLogo = TRUE)
+
+getEmbedding(ArchRProj = proj, embedding = "UMAP_Harmony", returnDF = TRUE)
+
+```
+
+```{r}
+# Assume your ArchR project is already loaded:
+# proj <- loadArchRProject("path/to/your/project")
+
+# 1. Extract barcodes from cell names by splitting on "#"
+barcodes <- sapply(strsplit(proj$cellNames, "#"), `[`, 2)
+
+# 2. Create a data frame for UMAP coordinates and cluster info
+umap_df <- as.data.frame(proj@cellColData)
+
+# Add UMAP coordinates from the UMAP_Harmony embedding
+umap_df$UMAP_1 <- proj@embeddings$UMAP_Harmony$df[, 1]
+umap_df$UMAP_2 <- proj@embeddings$UMAP_Harmony$df[, 2]
+
+# 3. Add the extracted barcodes into the UMAP data frame
+# We assume the order of proj$cellNames matches the rows in proj@cellColData.
+umap_df$Barcode <- barcodes
+
+# 5. Create the final table with the desired columns:
+#    Barcode, UMAP_1, UMAP_2, and NewClusters.
+final_table <- umap_df[, c("Barcode", "UMAP_1", "UMAP_2", "NewClusters")]
+
+
+```
+
+
+```{r}
+write.csv(final_table, "CUTAC_UMAP_table.csv", row.names = FALSE)
+
+```
+
+
+
+```{r}
+proj <- loadArchRProject(path = "K4me123_Final_ArchR/", force = FALSE, showLogo = TRUE)
+
+getEmbedding(ArchRProj = proj, embedding = "UMAP_Harmony", returnDF = TRUE)
+
+```
+
+```{r}
+#Visualize clusters
+plotEmbedding(ArchRProj = proj, colorBy = "cellColData", 
+              name = "NewClusters", 
+              embedding = "UMAP_Harmony", 
+              size =0.5, 
+              #pal= paletteContinuous(), 
+              plotAs= "points", 
+              #imputeWeights = getImputeWeights(proj),
+              colorTitle = 'mark'
+             )+theme_void()+theme(plot.title = element_blank())#+ NoLegend()
+```
+
+
+
+```{r}
+# Assume your ArchR project is already loaded:
+# proj <- loadArchRProject("path/to/your/project")
+
+# 1. Extract barcodes from cell names by splitting on "#"
+barcodes <- sapply(strsplit(proj$cellNames, "#"), `[`, 2)
+
+# 2. Create a data frame for UMAP coordinates and cluster info
+umap_df <- as.data.frame(proj@cellColData)
+
+# Add UMAP coordinates from the UMAP_Harmony embedding
+umap_df$UMAP_1 <- proj@embeddings$UMAP_Harmony$df[, 1]
+umap_df$UMAP_2 <- proj@embeddings$UMAP_Harmony$df[, 2]
+
+# 3. Add the extracted barcodes into the UMAP data frame
+# We assume the order of proj$cellNames matches the rows in proj@cellColData.
+umap_df$Barcode <- barcodes
+
+# 5. Create the final table with the desired columns:
+#    Barcode, UMAP_1, UMAP_2, and NewClusters.
+final_table <- umap_df[, c("Barcode", "UMAP_1", "UMAP_2", "NewClusters")]
+
+
+```
+
+
+```{r}
+write.csv(final_table, "K4me123_UMAP_table.csv", row.names = FALSE)
+
+```
+
+
+```{r}
+proj <- loadArchRProject(path = "K27me3_Final_ArchR/", force = FALSE, showLogo = TRUE)
+
+getEmbedding(ArchRProj = proj, embedding = "UMAP_Harmony", returnDF = TRUE)
+
+```
+
+
+```{r}
+#Visualize clusters
+plotEmbedding(ArchRProj = proj, colorBy = "cellColData", 
+              name = "NewClusters", 
+              embedding = "UMAP_Harmony", 
+              size =0.5, 
+              #pal= paletteContinuous(), 
+              plotAs= "points", 
+              #imputeWeights = getImputeWeights(proj),
+              colorTitle = 'mark'
+             )+theme_void()+theme(plot.title = element_blank())#+ NoLegend()
+```
+
+
+```{r}
+# Assume your ArchR project is already loaded:
+# proj <- loadArchRProject("path/to/your/project")
+
+# 1. Extract barcodes from cell names by splitting on "#"
+barcodes <- sapply(strsplit(proj$cellNames, "#"), `[`, 2)
+
+# 2. Create a data frame for UMAP coordinates and cluster info
+umap_df <- as.data.frame(proj@cellColData)
+
+# Add UMAP coordinates from the UMAP_Harmony embedding
+umap_df$UMAP_1 <- proj@embeddings$UMAP_Harmony$df[, 1]
+umap_df$UMAP_2 <- proj@embeddings$UMAP_Harmony$df[, 2]
+
+# 3. Add the extracted barcodes into the UMAP data frame
+# We assume the order of proj$cellNames matches the rows in proj@cellColData.
+umap_df$Barcode <- barcodes
+
+# 5. Create the final table with the desired columns:
+#    Barcode, UMAP_1, UMAP_2, and NewClusters.
+final_table <- umap_df[, c("Barcode", "UMAP_1", "UMAP_2", "NewClusters")]
+
+
+```
+
+
+```{r}
+write.csv(final_table, "K27me3_UMAP_table.csv", row.names = FALSE)
+
+```
+
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(colorspace)
+library(ggnewscale)
+
+# Load data
+df_cut <- read.csv("CUTAC_UMAP_table.csv", stringsAsFactors = FALSE)
+df_k4  <- read.csv("K4me123_UMAP_table.csv", stringsAsFactors = FALSE)
+df_k27 <- read.csv("K27me3_UMAP_table.csv", stringsAsFactors = FALSE)
+
+# Ensure NewClusters exists and is character
+if (!"NewClusters" %in% colnames(df_k4))  stop("df_k4 is missing 'NewClusters'")
+if (!"NewClusters" %in% colnames(df_k27)) stop("df_k27 is missing 'NewClusters'")
+if (!"NewClusters" %in% colnames(df_cut)) df_cut$NewClusters <- NA_character_
+
+
+# Confirm barcodes
+cat("CUTAC barcodes:  ", length(unique(df_cut$Barcode)), "\n")
+cat("K4me123 barcodes:", length(unique(df_k4$Barcode)), "\n")
+cat("K27me3 barcodes: ", length(unique(df_k27$Barcode)), "\n")
+
+# Determine shared barcodes (CUTAC with each of the others)
+shared_k4_cut  <- intersect(df_cut$Barcode, df_k4$Barcode)
+shared_k27_cut <- intersect(df_cut$Barcode, df_k27$Barcode)
+
+cat("Shared CUTAC/K4me123 barcodes: ", length(shared_k4_cut), "\n")
+cat("Shared CUTAC/K27me3 barcodes:", length(shared_k27_cut), "\n")
+
+# Reassign clusters in K27
+df_k27 <- dplyr::mutate(df_k27,
+  NewClusters = ifelse(NewClusters %in% c("CLP", "GMP"), "LMPP", NewClusters)
+)
+
+# Assign NewClusters to CUTAC from K4 (first) and K27 (if not in K4)
+df_cut <- df_cut %>%
+  dplyr::left_join(
+    df_k4 %>% dplyr::select(Barcode, cluster_k4 = NewClusters),
+    by = "Barcode"
+  ) %>%
+  dplyr::left_join(
+    df_k27 %>% dplyr::select(Barcode, cluster_k27 = NewClusters),
+    by = "Barcode"
+  ) %>%
+  dplyr::mutate(
+    NewClusters = dplyr::coalesce(cluster_k4, cluster_k27)
+  )
+
+
+# Preprocess: Add UMAP shifts for plotting
+offset <- 25
+
+
+df_k4 <- df_k4 %>%
+  dplyr::filter(Barcode %in% shared_k4_cut) %>%
+  dplyr::mutate(
+    new_x = -UMAP_1,
+    new_y = -UMAP_2,
+    dataset = "K4me123"
+  )
+
+df_cut <- df_cut %>%
+  dplyr::mutate(
+    new_x = UMAP_1 + offset,
+    new_y = UMAP_2,
+    dataset = "CUTAC"
+  )
+
+df_k27 <- df_k27 %>%
+  dplyr::filter(Barcode %in% shared_k27_cut) %>%
+  dplyr::mutate(
+    new_x = UMAP_1 + 2 * offset,
+    new_y = UMAP_2,
+    dataset = "K27me3"
+  )
+
+# Build segments between K4 ↔ CUTAC
+seg_k4_cut <- dplyr::inner_join(
+  df_k4 %>% dplyr::select(Barcode, x1 = new_x, y1 = new_y, cluster = NewClusters),
+  df_cut %>% dplyr::select(Barcode, x2 = new_x, y2 = new_y),
+  by = "Barcode"
+)
+
+# Build segments between CUTAC ↔ K27
+seg_cut_k27 <- dplyr::inner_join(
+  df_cut %>% dplyr::select(Barcode, x1 = new_x, y1 = new_y),
+  df_k27 %>% dplyr::select(Barcode, x2 = new_x, y2 = new_y, cluster = NewClusters),
+  by = "Barcode"
+)
+
+# Cluster colors
+cluster_colors <- c(
+  "HSC"   = "#D51F26",
+  "MPP"   = "#8A9FD1",
+  "LMPP"  = "#C06CAB",
+  "MEP"   = "#208A42",
+  "CLP"   = "#89288F",
+  "GMP"   = "#F47D2B",
+  "PBMC1" = "grey",
+  "PBMC2" = "grey",
+  "PBMC3" = "grey"
+)
+
+# Assign segment colors (lightened)
+seg_k4_cut <- dplyr::mutate(seg_k4_cut,
+  seg_color = lighten(cluster_colors[cluster], 0.5)
+)
+
+seg_cut_k27 <- dplyr::mutate(seg_cut_k27,
+  seg_color = lighten(cluster_colors[cluster], 0.5)
+)
+
+# Combine all point data (don't try to merge incompatible barcodes!)
+points_all <- dplyr::bind_rows(
+  df_k4 %>% dplyr::filter(Barcode %in% shared_k4_cut),
+  df_cut %>% dplyr::filter(Barcode %in% union(shared_k4_cut, shared_k27_cut)),
+  df_k27 %>% dplyr::filter(Barcode %in% shared_k27_cut)
+)
+
+# Separate HSC for top-layer plotting
+points_all$NewClusters <- as.character(points_all$NewClusters)
+non_HSC <- dplyr::filter(points_all, NewClusters != "HSC")
+HSC     <- dplyr::filter(points_all, NewClusters == "HSC")
+
+# Build plot
+p <- ggplot() +
+  geom_segment(
+    data = seg_k4_cut,
+    aes(x = x1, y = y1, xend = x2, yend = y2, color = seg_color),
+    size = 0.2, alpha = 0.7
+  ) +
+  scale_color_identity() +
+  new_scale_color() +
+  geom_segment(
+    data = seg_cut_k27,
+    aes(x = x1, y = y1, xend = x2, yend = y2, color = seg_color),
+    size = 0.2, alpha = 0.7
+  ) +
+  scale_color_identity() +
+  new_scale_color() +
+  geom_point(
+    data = non_HSC,
+    aes(x = new_x, y = new_y, color = NewClusters),
+    size = 2
+  ) +
+  geom_point(
+    data = HSC,
+    aes(x = new_x, y = new_y, color = NewClusters),
+    size = 2
+  ) +
+  scale_color_manual(values = cluster_colors) +
+  theme_classic() +
+  labs(x = "Adjusted UMAP_1", y = "UMAP_2", color = "Cluster") +
+  scale_x_continuous(
+    breaks = c(0, offset, 2 * offset),
+    labels = c("K4me123", "CUTAC", "K27me3")
+  )
+
+print(p)
+
+
+
+```
+
+```{r}
+#This section is for the Trajectory Analysis
+
+proj <- loadArchRProject(path = "K4me123_Final_ArchR/", force = FALSE, showLogo = TRUE)
+
+getEmbedding(ArchRProj = proj, embedding = "UMAP_Harmony", returnDF = TRUE)
+
+
+```
+
+```{r}
+# Function to assign cluster names from barcode table to ArchR project
+add_clusters_to_proj <- function(proj, cluster_file) {
+    # Load barcode-to-cluster mapping
+    cluster_data <- read.csv(cluster_file, stringsAsFactors = FALSE)
+    
+    # Extract barcodes from ArchR project cellNames (assumes format: sample#barcode)
+    barcode_matrix <- data.frame(t(data.frame(strsplit(proj$cellNames, "#"))[2,]))
+    colnames(barcode_matrix) <- "barcode"
+    proj$barcode <- barcode_matrix$barcode
+
+    # Merge cluster assignments based on barcode
+    matched_clusters <- cluster_data[match(proj$barcode, cluster_data$barcode), ]
+    
+    # Assign cluster name to new metadata field
+    proj$NewClusters <- matched_clusters$cluster_name
+    
+    return(proj)
+}
+
+# File path to your barcode-cluster CSV
+cluster_file <- "K4me123_MEP_Traj_Cluster_Barcodes.csv"
+
+# Apply the function
+proj <- add_clusters_to_proj(proj, cluster_file)
+
+```
+
+```{r}
+#Visualize clusters
+plotEmbedding(ArchRProj = proj, colorBy = "cellColData", 
+              name = "NewClusters", 
+              embedding = "UMAP_Harmony", 
+              size =0.5, 
+              #pal= paletteContinuous(), 
+              plotAs= "points", 
+              #imputeWeights = getImputeWeights(proj),
+              colorTitle = 'mark'
+             )+theme_void()+theme(plot.title = element_blank())#+ NoLegend()
+```
+
+```{r}
+# Extract UMAP data
+umap_df <- proj@cellColData %>% data.frame()
+umap_df$UMAP_1 <- proj@embeddings$UMAP_Harmony$df[, 1]
+umap_df$UMAP_2 <- proj@embeddings$UMAP_Harmony$df[, 2]
+
+# Define sample order
+ord_new <- c(
+ "No_MEP", "MPP", "MEP_early", "MEP_mid",  "MEP_late", "HSC"    
+
+)
+
+# Reorder the 'NewClusters' column
+umap_df$NewClusters <- factor(umap_df$NewClusters, levels = ord_new)
+umap_df <- umap_df[order(umap_df$NewClusters), ]
+
+# Get the ArchR stallion palette
+stallion_colors <- c(
+"grey", "#3b528b", "#21918c", "#5ec962", "#fde725",  "#440154"
+ 
+ 
+ #,   "#89C75F", "#F37B7D", "#9983BD", "#D24B27", "#3BBCA8", "#6E4B9E", "#E6C2DC",  "#90D5E4",
+)
+
+# Define the output file path
+output_file <- "H3K4me1-2-3_2in1_MEP_Traj_Clusters_UMAP_021325.png"
+
+umap_plot <- ggplot(umap_df, aes(
+  x = UMAP_1,
+  y = UMAP_2,
+  color = NewClusters
+)) +
+  geom_point(size = 0.5) +
+  theme_void() +
+  theme(
+    plot.title = element_blank(),
+    strip.text = element_blank(),
+    legend.position = c(.2, .65),
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 10, face = "bold")
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 1))) +
+  scale_color_manual(
+    name = "MEP_Traj_Clusters",
+    values = stallion_colors
+  )
+
+# Save the plot as a PNG file
+ggsave(
+  filename = output_file,
+  plot = umap_plot,
+  device = "png",
+  width = 6,   # Adjust the width as needed (in inches)
+  height = 6,  # Adjust the height as needed (in inches)
+  dpi = 300    # Adjust the resolution as needed
+)
+
+# Plot UMAP with 'Clusters' as the grouping variable
+ggplot(umap_df, aes(
+  x = UMAP_1,
+  y = UMAP_2,
+  color = NewClusters
+)) +
+  geom_point(size = 0.5) +
+  theme_void() +
+  theme(
+    plot.title = element_blank(),
+    strip.text = element_blank(),
+    legend.position = c(.2, .65),
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 10, face = "bold")
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 1))) +
+  scale_color_manual(
+    name = "MEP_Traj_Clusters",
+    values = stallion_colors
+  )
+
+```
+
+```{r}
+#This section is for the Trajectory Analysis
+
+proj <- loadArchRProject(path = "K27me3_Final_ArchR/", force = FALSE, showLogo = TRUE)
+
+getEmbedding(ArchRProj = proj, embedding = "UMAP_Harmony", returnDF = TRUE)
+
+
+```
+```{r}
+# Function to assign cluster names from barcode table to ArchR project
+add_clusters_to_proj <- function(proj, cluster_file) {
+    # Load barcode-to-cluster mapping
+    cluster_data <- read.csv(cluster_file, stringsAsFactors = FALSE)
+    
+    # Extract barcodes from ArchR project cellNames (assumes format: sample#barcode)
+    barcode_matrix <- data.frame(t(data.frame(strsplit(proj$cellNames, "#"))[2,]))
+    colnames(barcode_matrix) <- "barcode"
+    proj$barcode <- barcode_matrix$barcode
+
+    # Merge cluster assignments based on barcode
+    matched_clusters <- cluster_data[match(proj$barcode, cluster_data$barcode), ]
+    
+    # Assign cluster name to new metadata field
+    proj$NewClusters <- matched_clusters$cluster_name
+    
+    return(proj)
+}
+
+# File path to your barcode-cluster CSV
+cluster_file <- "K27me3_MEP_Traj_Cluster_Barcodes.csv"
+
+# Apply the function
+proj <- add_clusters_to_proj(proj, cluster_file)
+
+```
+
+```{r}
+#Visualize clusters
+plotEmbedding(ArchRProj = proj, colorBy = "cellColData", 
+              name = "NewClusters", 
+              embedding = "UMAP_Harmony", 
+              size =0.5, 
+              #pal= paletteContinuous(), 
+              plotAs= "points", 
+              #imputeWeights = getImputeWeights(proj),
+              colorTitle = 'mark'
+             )+theme_void()+theme(plot.title = element_blank())#+ NoLegend()
+```
+
+```{r}
+# Extract UMAP data
+umap_df <- proj@cellColData %>% data.frame()
+umap_df$UMAP_1 <- proj@embeddings$UMAP_Harmony$df[, 1]
+umap_df$UMAP_2 <- proj@embeddings$UMAP_Harmony$df[, 2]
+
+# Define sample order
+ord_new <- c(
+ "MEP", "No_MEP", "MPP_early", "MPP_late", "HSC"    
+
+)
+
+# Reorder the 'NewClusters' column
+umap_df$NewClusters <- factor(umap_df$NewClusters, levels = ord_new)
+umap_df <- umap_df[order(umap_df$NewClusters), ]
+
+# Get the ArchR stallion palette
+stallion_colors <- c(
+"#fde725","grey", "#32678B", "#4AB670",  "#440154"
+ 
+ 
+ #,   "#89C75F", "#F37B7D", "#9983BD", "#D24B27", "#3BBCA8", "#6E4B9E", "#E6C2DC",  "#90D5E4",
+)
+
+# Define the output file path
+output_file <- "H3K4me1-2-3_2in1_MEP_Traj_Clusters_UMAP_021325.png"
+
+umap_plot <- ggplot(umap_df, aes(
+  x = UMAP_1,
+  y = UMAP_2,
+  color = NewClusters
+)) +
+  geom_point(size = 0.5) +
+  theme_void() +
+  theme(
+    plot.title = element_blank(),
+    strip.text = element_blank(),
+    legend.position = c(.2, .65),
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 10, face = "bold")
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 1))) +
+  scale_color_manual(
+    name = "MEP_Traj_Clusters",
+    values = stallion_colors
+  )
+
+# Save the plot as a PNG file
+ggsave(
+  filename = output_file,
+  plot = umap_plot,
+  device = "png",
+  width = 6,   # Adjust the width as needed (in inches)
+  height = 6,  # Adjust the height as needed (in inches)
+  dpi = 300    # Adjust the resolution as needed
+)
+
+# Plot UMAP with 'Clusters' as the grouping variable
+ggplot(umap_df, aes(
+  x = UMAP_1,
+  y = UMAP_2,
+  color = NewClusters
+)) +
+  geom_point(size = 0.5) +
+  theme_void() +
+  theme(
+    plot.title = element_blank(),
+    strip.text = element_blank(),
+    legend.position = c(.2, .65),
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 10, face = "bold")
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 1))) +
+  scale_color_manual(
+    name = "MEP_Traj_Clusters",
+    values = stallion_colors
+  )
+
+```
+
+
+
+
+
+
+
