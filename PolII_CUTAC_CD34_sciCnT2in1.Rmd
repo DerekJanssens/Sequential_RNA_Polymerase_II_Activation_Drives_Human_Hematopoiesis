@@ -1,0 +1,1195 @@
+---
+title: "PolII_CUTAC_CD34_sciCnT2in1"
+output: html_document
+date: "2025-09-02"
+---
+
+```{r}
+#This series of commands installs the necessary packages for this notebook
+
+#install.packages("devtools", lib = install_path)
+#install.packages("Seurat", lib = install_path)
+# Install ArchR
+#if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager", lib = install_path)
+#devtools::install_github("GreenleafLab/ArchR", ref = "master", 
+#                         repos = BiocManager::repositories(), lib = install_path)
+#install.packages("repr", lib = install_path)
+#ArchR::installExtraPackages()
+#devtools::install_github("immunogenomics/harmony", lib = install_path)
+# Install GenomicRanges and rtracklayer if not already installed
+#if (!requireNamespace("GenomicRanges", quietly = TRUE)) {
+#  install.packages("BiocManager")
+#  BiocManager::install("GenomicRanges")
+#}
+#if (!requireNamespace("rtracklayer", quietly = TRUE)) {
+#  BiocManager::install("rtracklayer")
+#}
+#install.packages("viridis")
+
+```
+
+```{r}
+#Load the necessary packages for this notebook
+
+Sys.unsetenv("DISPLAY")
+
+suppressPackageStartupMessages({
+    library(ArchR)
+    library(parallel)
+    library(rtracklayer)
+    library(repr)
+    library(dplyr)
+    library(plyr)
+    library(Seurat)
+    library(ggplot2)
+    library(GenomicRanges)
+    library(rtracklayer)
+
+})
+set.seed(1)
+
+# Set default plot size
+options(repr.plot.width=10, repr.plot.height=10)
+```
+
+```{r}
+#Set threads and load the hg38 genome
+addArchRThreads(threads = 24)
+addArchRGenome('hg38')
+```
+
+```{r}
+#set project name and set sample names to the H3K27me3.bed.gz files
+
+proj_name = 'PolII_CUTAC_CD34_sciCnT2in1'
+
+sample_name1= 'CUTAC_Batch3_Full'
+sample_name2= 'CUTAC_Batch4_2in1_wK27me3_wSplit_Full'
+sample_name3= 'CUTAC_Batch7_2in1_wK4me123_wSplit_Full'
+sample_name4= 'CUTAC_Batch7_2in1_wK27me3_wSplit_Full'
+sample_name5= 'CUTAC_Batch8_2in1_wK4me123_wSplit_Full'
+sample_name6= 'CUTAC_Batch8_2in1_wK27me3_wSplit_Full'
+sample_name7= 'CUTAC_Batch9_2in1_wK4me123_wSplit_Full'
+sample_name8= 'CUTAC_Batch9_2in1_wK27me3_wSplit_Full'
+sample_name9= 'CUTAC_Batch10_Full'
+
+```
+
+```{r}
+#For PolII CUTAC set tilematparams (genomics bin size) to 50000 (50kb)
+tilematparams <- list(50000, FALSE)
+names(tilematparams) <- c("tileSize", "binarize")
+```
+
+```{r}
+#Set the directory to the location of the bed files, and specify the input files. 
+
+wdir <- '/bedfile/location/'
+
+# vector of your dataset name variables
+sample_names <- c(sample_name1, sample_name2, sample_name3, sample_name4, sample_name5, sample_name6, sample_name7, sample_name8, sample_name9)
+
+# build the full paths and name them
+inputFiles <- setNames(
+  paste0(wdir, sample_names, ".bed.gz"),
+  sample_names
+)
+
+out_dir <- wdir
+# dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+setwd(out_dir)
+
+```
+
+```{r}
+#Check the input paths
+inputFiles
+```
+
+```{r}
+# Create Arrow files
+ArrowFiles <- createArrowFiles(
+    inputFiles = inputFiles,
+    sampleNames = names(inputFiles),
+    #filterTSS = 1, # depricaTRUEd to minTSS
+    minTSS = 0, #Dont set this too high because you can always increase later
+    #filterFrags = 3000, # depricated to minFrags
+    minFrags = 100,
+    maxFrags = Inf,
+    addTileMat = TRUE,
+    addGeneScoreMat = FALSE,
+    excludeChr = c('chrM'),
+    TileMatParams = tilematparams#,
+    #force = TRUE
+    #removeFilteredCells = TRUE # seems to be removed with the other filter args
+)
+```
+
+```{r}
+# Combine Arrow files from H3K27me3 into proj_K27me3
+arrows_CD34_1 = '/bedfile/location/ArrowFiles/CUTAC_Batch3_Full.arrow'
+arrows_CD34_2 = '/bedfile/location/ArrowFiles/CUTAC_Batch4_2in1_wK27me3_wSplit_Full.arrow'
+arrows_CD34_3 = '/bedfile/location/ArrowFiles/CUTAC_Batch7_2in1_wK4me123_wSplit_Full.arrow'
+arrows_CD34_4 = '/bedfile/location/ArrowFiles/CUTAC_Batch7_2in1_wK27me3_wSplit_Full.arrow'
+arrows_CD34_5 = '/bedfile/location/ArrowFiles/CUTAC_Batch8_2in1_wK4me123_wSplit_Full.arrow'
+arrows_CD34_6 = '/bedfile/location/ArrowFiles/CUTAC_Batch8_2in1_wK27me3_wSplit_Full.arrow'
+arrows_CD34_7 = '/bedfile/location/ArrowFiles/CUTAC_Batch9_2in1_wK4me123_wSplit_Full.arrow'
+arrows_CD34_8 = '/bedfile/location/ArrowFiles/CUTAC_Batch9_2in1_wK27me3_wSplit_Full.arrow'
+arrows_CD34_9 = '/bedfile/location/ArrowFiles/CUTAC_Batch10_Full.arrow'
+
+
+inputFiles <- structure(c(arrows_CD34_1,
+                          arrows_CD34_2,
+                          arrows_CD34_3,
+                          arrows_CD34_4,
+                          arrows_CD34_5,
+                          arrows_CD34_6,
+                          arrows_CD34_7,
+                          arrows_CD34_8,
+                          arrows_CD34_9
+                          ),
+                        .Names = c('CD34_1',
+                                   'CD34_2',
+                                   'CD34_3',
+                                   'CD34_4',
+                                   'CD34_5',
+                                   'CD34_6',
+                                   'CD34_7',
+                                   'CD34_8',
+                                   'CD34_9'))
+
+proj <- ArchRProject(
+            ArrowFiles = inputFiles,
+            outputDirectory = out_dir,
+            copyArrows = FALSE,
+            showLogo = FALSE
+)
+```
+
+```{r}
+#Here we use the same custom blacklist generated from the H3K4me123 data. 
+
+# Specify the path to your BED file
+bed_file <- "/location/of/peakfiles/K4me123_R8_Master_Blacklist_5E-15.bed"
+
+# Read the BED file into a data frame
+bed_df <- read.table(bed_file, header = FALSE, sep = "\t")
+
+# Assign column names to the BED data frame
+colnames(bed_df) <- c("chr", "start", "end")
+
+# Create a GRanges object, defaulting the strand to "*"
+K4me123_Blacklist_GRanges <- GRanges(
+  seqnames = bed_df$chr,
+  ranges = IRanges(start = bed_df$start, end = bed_df$end),
+  strand = "*"
+)
+# Inspect the GRanges object
+K4me123_Blacklist_GRanges <- keepStandardChromosomes(K4me123_Blacklist_GRanges, pruning.mode = "coarse")
+# Remove "chrM" from GRanges to match the ArchR genome annotation
+valid_chr <- setdiff(seqlevels(K4me123_Blacklist_GRanges), "chrM")
+K4me123_Blacklist_GRanges <- keepSeqlevels(K4me123_Blacklist_GRanges, valid_chr, pruning.mode = "coarse")
+seqlevels(K4me123_Blacklist_GRanges)  # Check if the chromosome names are consistent with your genome
+#head(K4me123_GRanges)
+# Retrieve the genome annotation and the current blacklist
+genome_annotation <- getGenomeAnnotation(proj)
+existing_blacklist <- genome_annotation$blacklist
+# Combine the existing blacklist with your custom blacklist
+combined_blacklist <- sort(c(existing_blacklist, K4me123_Blacklist_GRanges))
+
+hg38_blacklist = createGenomeAnnotation(
+  genome = "hg38",
+  #chromSizes = getChromSizes("hg38"),
+  blacklist = combined_blacklist,
+  filter = TRUE,
+  filterChr = c("chrM")
+)
+hg38_blacklist$blacklist = combined_blacklist
+genomeAnnotation = hg38_blacklist
+
+
+# Create a new ArchR project with the updated genome annotation and blacklist
+proj <- ArchRProject(
+  ArrowFiles = getArrowFiles(proj),  # Use the Arrow files from the existing project
+  outputDirectory = "/bedfile/location/",  # Path to the output directory for the new project
+  genomeAnnotation = hg38_blacklist,  # The updated genome annotation with the new blacklist
+  copyArrows = FALSE  # Set to FALSE so that you can update matrices first
+)
+
+# Update the TileMatrix to incorporate the new blacklist
+proj = addTileMatrix(
+    input = proj,
+    tileSize = 50000, 
+    binarize = FALSE, 
+    force = TRUE # Use force = TRUE to overwrite the existing matrix with updated blacklist
+)
+```
+
+```{r}
+# SVD, UMAP, and Clustering
+UMAP_Harmony_clusters = function(proj){
+    #SVD
+    proj <- addIterativeLSI(
+        ArchRProj = proj,
+        useMatrix = "TileMatrix", 
+        name = "IterativeLSI", 
+        iterations = 2, 
+        dimsToUse = 1:15, 
+        varFeatures = 200000, 
+        clusterParams = list( #See Seurat::FindClusters,
+            resolution = c(0.1, 0.3), 
+            sampleCells = 8000, 
+            n.start = 10), 
+        outlierQuantiles = c(0.025, 0.975), 
+        verbose = FALSE,
+        force=TRUE
+    )
+    #UMAP
+    proj <- addUMAP(
+        ArchRProj = proj,
+        reducedDims = "IterativeLSI",
+        name = "UMAP",
+        nNeighbors = 40,
+        minDist = 0.4,
+        metric = "cosine",
+        verbose = FALSE,
+        force = TRUE
+    )
+    
+    proj <- addHarmony(
+      ArchRProj = proj,
+      reducedDims = "IterativeLSI", # The dimension reduction to use (e.g., IterativeLSI or PCA)
+      name = "Harmony",             # Name of the batch-corrected reducedDims to save
+      groupBy = "Sample",            # The batch variable to correct
+      force = TRUE
+    )
+    
+    # Add UMAP using Harmony-Corrected Dimensions
+    proj <- addUMAP(
+      ArchRProj = proj,
+      reducedDims = "Harmony", # Use the Harmony-corrected reducedDims
+      name = "UMAP_Harmony",   # Name for the UMAP embedding
+      nNeighbors = 40,         # Number of neighbors
+      minDist = 0.4,           # Minimum distance for UMAP
+      metric = "cosine",        # Distance metric for UMAP
+      force = TRUE
+    )
+    proj <- addClusters(input = proj, 
+                            method = "Seurat", 
+                            name = "Clusters", 
+                            reducedDims = "Harmony",  
+                            resolution = 20, 
+                            maxClusters = 100,
+                            verbose = FALSE,
+                            force=TRUE
+                           )
+    
+    #Save
+    #p1 <- plotEmbedding(ArchRProj = proj, colorBy = "cellColData", name = "Clusters", embedding = "UMAP")
+    #plotPDF(p1, name = "Plot-UMAP-Sample-Clusters_1.pdf", ArchRProj = proj, addDOC = FALSE, width = 5, height = 5)
+    return(proj)
+}
+```
+
+```{r}
+#UMAP + clustering over all cells and catalogue
+proj = UMAP_Harmony_clusters(proj)
+
+```
+
+```{r}
+#Visualize clusters
+plotEmbedding(ArchRProj = proj, colorBy = "cellColData", 
+              name = "Sample", 
+              embedding = "UMAP_Harmony", 
+              size =0.5, 
+              #pal= paletteContinuous(), 
+              plotAs= "points", 
+              #imputeWeights = getImputeWeights(proj),
+              colorTitle = 'mark'
+             )+theme_void()+theme(plot.title = element_blank())#+ NoLegend()
+```
+
+```{r}
+# Get the total number of cells in the ArchR project
+num_cells <- nCells(proj)
+
+# Print the number of cells
+cat("Number of cells in the ArchR project:", num_cells, "\n")
+
+```
+
+```{r}
+# Specify the path to your BED file
+bed_file <- "/location/of/peakfiles/CUTAC_SEACR_Peaks.01.stringent.bed"
+
+# Read the BED file into a data frame
+bed_df <- read.table(bed_file, header = FALSE, sep = "\t")
+
+# Assign column names to the BED data frame
+colnames(bed_df) <- c("chr", "start", "end")
+
+# Create a GRanges object, defaulting the strand to "*"
+CUTAC_GRanges <- GRanges(
+  seqnames = bed_df$chr,
+  ranges = IRanges(start = bed_df$start, end = bed_df$end),
+  strand = "*"
+)
+
+# Inspect the GRanges object
+CUTAC_GRanges <- keepStandardChromosomes(CUTAC_GRanges, pruning.mode = "coarse")
+# Remove "chrM" from GRanges to match the ArchR genome annotation
+valid_chr <- setdiff(seqlevels(CUTAC_GRanges), "chrM")
+CUTAC_GRanges <- keepSeqlevels(CUTAC_GRanges, valid_chr, pruning.mode = "coarse")
+seqlevels(CUTAC_GRanges)  # Check if the chromosome names are consistent with your genome
+#head(K4me123_GRanges)
+
+```
+
+
+```{r}
+# Add the GRanges peak set to your ArchR project
+proj <- addPeakSet(
+  ArchRProj = proj,
+  peakSet = CUTAC_GRanges,
+  force = TRUE
+)
+
+```
+
+```{r}
+proj <- addPeakMatrix(proj)
+```
+
+```{r}
+#Visualize clusters
+plotEmbedding(ArchRProj = proj, colorBy = "cellColData", 
+              name = "FRIP", 
+              embedding = "UMAP_Harmony", 
+              size =0.5, 
+              #pal= paletteContinuous(), 
+              plotAs= "points", 
+              #imputeWeights = getImputeWeights(proj),
+              colorTitle = 'mark'
+             )+theme_void()+theme(plot.title = element_blank())#+ NoLegend()
+```
+
+
+```{r}
+ proj <- addClusters(input = proj, 
+                            method = "Seurat", 
+                            name = "Clusters", 
+                            reducedDims = "Harmony",  
+                            resolution = 2, 
+                            maxClusters = 15,
+                            verbose = FALSE,
+                            force=TRUE
+                           )
+```
+
+```{r}
+#Visualize clusters
+plotEmbedding(ArchRProj = proj, colorBy = "cellColData", 
+              name = "Clusters", 
+              embedding = "UMAP_Harmony", 
+              size =0.5, 
+              #pal= paletteContinuous(), 
+              plotAs= "points", 
+              #imputeWeights = getImputeWeights(proj),
+              colorTitle = 'mark'
+             )+theme_void()+theme(plot.title = element_blank())#+ NoLegend()
+```
+
+
+```{r}
+# Extract updated cell metadata from the ArchR project, including the updated FRiP scores
+cell_metadata <- getCellColData(proj, select = c("Sample", "FRIP"))
+
+# Multiply FRiP scores by 100 to convert them into percentages
+cell_metadata$FRIP <- cell_metadata$FRIP * 100
+
+# Specify the desired order for the samples (replace this with your desired order)
+desired_order <- c("CUTAC_Batch3_Full", "CUTAC_Batch4_2in1_wK27me3_wSplit_Full", "CUTAC_Batch7_2in1_wK4me123_wSplit_Full", "CUTAC_Batch7_2in1_wK27me3_wSplit_Full", "CUTAC_Batch8_2in1_wK4me123_wSplit_Full", "CUTAC_Batch8_2in1_wK27me3_wSplit_Full", "CUTAC_Batch9_2in1_wK4me123_wSplit_Full", "CUTAC_Batch9_2in1_wK27me3_wSplit_Full", "CUTAC_Batch10_Full")  # Modify as needed
+
+# Create the violin plot with the specified sample order
+p <- ggplot(cell_metadata, aes(x = factor(Sample, levels = desired_order), y = FRIP)) +
+  geom_violin(trim = FALSE, fill = "skyblue", color = "black", size = 1) +
+  geom_hline(yintercept = 50, color = "red", linetype = "dotted", size = 1.5) +
+  geom_hline(yintercept = 77.5, color = "red", linetype = "dotted", size = 1.5) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank(),
+    panel.border = element_rect(size = 1.5)
+  ) +
+  labs(
+    x = "Sample",
+    y = "Fraction of Reads in Peaks (FRiP, %)",
+    title = "FRiP Scores Across Samples (Custom Peaks)"
+  )
+
+# Display the plot
+print(p)
+
+# Save the plot with larger dimensions
+ggsave("/location/for/figure/output/CUTAC_FRiP_Violin.png", plot = p, width = 16, height = 10, dpi = 300)
+
+```
+
+
+```{r}
+# Here we need to define the clusters that have low FRIPs and specify they need to be above 0.50
+target_cluster <- c("C1", "C2", "C10", "C11")
+
+# Apply the FRIP cutoff only to the target samples
+proj <- proj[!(proj$Clusters %in% target_cluster) | (proj$Clusters %in% target_cluster & proj$FRIP > 0.50), ]
+
+```
+
+```{r}
+# Here we need to define the clusters that have high FRIPs and specify they need to be below 0.775
+target_cluster <- c("C4", "C5", "C6", "C7")
+
+# Apply the FRIP cutoff only to the target samples
+proj <- proj[!(proj$Clusters %in% target_cluster) | (proj$Clusters %in% target_cluster & proj$FRIP < 0.775), ]
+
+```
+
+```{r}
+#Here we remove the satellite clsuter
+proj <- proj[!(proj$Clusters %in% "C3")]
+```
+
+```{r}
+#UMAP + clustering over all cells and catalogue
+proj = UMAP_Harmony_clusters(proj)
+```
+
+```{r}
+#Visualize clusters
+plotEmbedding(ArchRProj = proj, colorBy = "cellColData", 
+              name = "Clusters", 
+              embedding = "UMAP_Harmony", 
+              size =0.5, 
+              #pal= paletteContinuous(), 
+              plotAs= "points", 
+              #imputeWeights = getImputeWeights(proj),
+              colorTitle = 'mark'
+             )+theme_void()+theme(plot.title = element_blank())#+ NoLegend()
+```
+
+
+```{r}
+# At this point you may want to save the project
+subsetArchRProject(
+  ArchRProj = proj,
+  cells = getCellNames(proj),
+  outputDirectory = "/location/of/archR/files/CUTAC_FRIP_FRIB_ArchR/",
+  dropCells = TRUE,
+  logFile = NULL,
+  threads = getArchRThreads(),
+  force = TRUE
+)
+```
+
+```{r}
+##You can use this chunk to reload your saved project###
+
+proj <- loadArchRProject(path = "/location/of/archR/files/CUTAC_FRIP_FRIB_ArchR/", force = FALSE, showLogo = TRUE)
+
+getEmbedding(ArchRProj = proj, embedding = "UMAP_Harmony", returnDF = TRUE)
+
+
+```
+
+
+```{r}
+#add_soup to proj as assignment
+add_soup = function(proj, soup_dir){
+    #define barcodes to mach with souporcell output
+    x = data.frame(t(data.frame(strsplit(proj$cellNames, '#'))[2,]))
+    proj$soup_bc = paste0(x[,1])
+    
+    #import soup_data
+    soup_data = read.csv(paste0(soup_dir, 'souporcell_CUTAC_Combined_SplitReadCounts.csv.gz'))
+    
+    
+    #subset and sort soup_data by bc, then add to archr proj
+    soup_data = soup_data[soup_data$barcode %in% proj$soup_bc,]
+    soup_data = soup_data[match(proj$soup_bc, soup_data$barcode),]
+    proj$assignment = soup_data$assignment
+    proj$status = soup_data$status
+    return(proj)
+}
+```
+
+```{r}
+read.csv(paste0('/location/of/tables/souporcell_CUTAC_Combined_SplitReadCounts.csv.gz'))
+```
+
+```{r}
+#import souporcell calls
+soup_dir = '/location/of/tables/'
+proj = add_soup(proj, soup_dir)
+```
+
+```{r}
+unique(proj$status)
+```
+
+```{r}
+unique(proj$assignment)
+```
+
+```{r}
+#label clusters
+remapClust <- c(
+    "1" = "1",
+    "2" = "2",
+    "3" = "3",
+    "4" = "4",
+    "5" = "5",
+    "6" = "6",
+    "7" = "7",
+    "8" = "8",
+    "X" = "X",
+    "1/2" = "Mixed",
+    "1/3" = "Mixed",
+    "1/4" = "Mixed",
+    "1/5" = "Mixed",
+    "1/6" = "Mixed",
+    "1/7" = "Mixed",
+    "1/8" = "Mixed",
+    "1/X" = "Mixed",
+    "2/1" = "Mixed",
+    "2/3" = "Mixed",
+    "2/4" = "Mixed",
+    "2/5" = "Mixed",
+    "2/6" = "Mixed",
+    "2/7" = "Mixed",
+    "2/8" = "Mixed",
+    "2/X" = "Mixed",
+    "3/1" = "Mixed",
+    "3/2" = "Mixed",
+    "3/4" = "Mixed",
+    "3/5" = "Mixed",
+    "3/6" = "Mixed",
+    "3/7" = "Mixed",
+    "3/8" = "Mixed",
+    "3/X" = "Mixed",
+    "4/1" = "Mixed",
+    "4/2" = "Mixed",
+    "4/3" = "Mixed",
+    "4/5" = "Mixed",
+    "4/6" = "Mixed",
+    "4/7" = "Mixed",
+    "4/8" = "Mixed",
+    "4/X" = "Mixed",
+    "5/1" = "Mixed",
+    "5/2" = "Mixed",
+    "5/3" = "Mixed",
+    "5/4" = "Mixed",
+    "5/6" = "Mixed",
+    "5/7" = "Mixed",
+    "5/8" = "Mixed",
+    "5/X" = "Mixed",
+    "6/1" = "Mixed",
+    "6/2" = "Mixed",
+    "6/3" = "Mixed",
+    "6/4" = "Mixed",
+    "6/5" = "Mixed",
+    "6/7" = "Mixed",
+    "6/8" = "Mixed",
+    "6/X" = "Mixed",
+    "7/1" = "Mixed",
+    "7/2" = "Mixed",
+    "7/3" = "Mixed",
+    "7/4" = "Mixed",
+    "7/5" = "Mixed",
+    "7/6" = "Mixed",
+    "7/8" = "Mixed",
+    "7/X" = "Mixed",
+    "8/1" = "Mixed",
+    "8/2" = "Mixed",
+    "8/3" = "Mixed",
+    "8/4" = "Mixed",
+    "8/5" = "Mixed",
+    "8/6" = "Mixed",
+    "8/7" = "Mixed",
+    "8/X" = "Mixed",
+    "X/1" = "Mixed",
+    "X/2" = "Mixed",
+    "X/3" = "Mixed",
+    "X/4" = "Mixed",
+    "X/5" = "Mixed",
+    "X/6" = "Mixed",
+    "X/7" = "Mixed",
+    "X/8" = "Mixed",
+    "X/X" = "Mixed"
+)
+
+proj$genotype = proj$assignment
+
+proj$genotype = mapLabels(proj$genotype, newLabels = remapClust, oldLabels = names(remapClust))
+```
+
+```{r}
+unique(proj$genotype)
+```
+
+```{r}
+# Extract UMAP data
+umap_df = proj@cellColData %>% data.frame()
+umap_df$UMAP_1 <- proj@embeddings$UMAP_Harmony$df[, 1]
+umap_df$UMAP_2 <- proj@embeddings$UMAP_Harmony$df[, 2]
+
+# Reorder the 'genotype' factor and reorder data
+ord_new = c('1', '2', '3', '4', '5', '6', '7', '8', 'X', 'Mixed')
+umap_df$genotype <- factor(umap_df$genotype, levels = ord_new)
+umap_df <- umap_df[order(umap_df$genotype),]
+
+# Create UMAP plot
+umap_plot <- ggplot(umap_df, aes(x = UMAP_1, 
+                                 y = UMAP_2, 
+                                 color = genotype)) +
+  geom_point() +
+  theme_void() +
+  theme(
+    plot.title = element_blank(), 
+    strip.text = element_blank(), 
+    legend.position = c(.025, .85), 
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 10, face = "bold")
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 1))) +
+  scale_color_manual(
+    name = "Genotype",
+    values = c('#cdcfcc', '#cdcfcc', '#a3a3a3', '#878787', '#636262', 
+               'gray26', '#090a09', '#9705ff')
+  )
+
+# Display the plot
+print(umap_plot)
+
+# Save the plot
+output_file <- "/location/for/figure/output/CUTAC_SouporCell_UMAP.png"
+ggsave(
+  filename = output_file,
+  plot = umap_plot,
+  device = "png",
+  width = 6,    # Adjust the width as needed (in inches)
+  height = 6,   # Adjust the height as needed (in inches)
+  dpi = 300     # Adjust the resolution as needed
+)
+
+```
+
+```{r}
+#calculate percent mixed genotype by cluster
+geno_by_cluster = function(proj){
+    #label mixed and single donor cells
+    df = data.frame(getCellColData(proj, select = c("genotype", "Clusters")))
+    df$donor[df$genotype %in% c('1', '2', '3', '4', '5', '6', '7', '8', 'X')] = 'single'
+    df$donor[df$genotype %in% c('Mixed')] = 'mixed'
+
+    #compute percentage of mixed donor per cluster 
+    df = data.frame(df %>% group_by(Clusters, donor) %>% tally())
+    df = transform(df, total = ave(n, Clusters, FUN = sum))
+    df = transform(df, perc = ave(n, Clusters, FUN = prop.table))
+    df = df[df$donor == 'mixed',]
+    df = df[order(-df$perc),]
+    return(df)
+}
+```
+
+
+```{r}
+proj_geno_by_cluster = geno_by_cluster(proj)
+
+proj_geno_by_cluster
+```
+
+```{r}
+# Create the rank-order dot plot of the mixed donor percentages using proj_geno_by_cluster
+rank_order_dot_plot <- ggplot(proj_geno_by_cluster, aes(x = reorder(Clusters, -perc), y = perc * 100)) +
+  geom_point(size = 3, color = "steelblue") +  # Use geom_point to create a dot plot
+  geom_hline(yintercept = 20, color = "red", linetype = "dotted", size = 1.2) +  # Add a red dotted line at y = 15
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank(),
+    panel.border = element_rect(size = 1.5)
+  ) +
+  labs(
+    x = "Cluster",
+    y = "Percentage of Mixed Genotype (%)",
+    title = "Percentage of Mixed Genotype by Cluster (Rank-Ordered)"
+  )
+
+# Display the plot
+print(rank_order_dot_plot)
+
+# Save the plot to a file
+output_file <- "/location/for/figure/output/CUTAC_SouporCell_Doublets_per_Cluster_RankOrder.png"
+ggsave(
+  filename = output_file,
+  plot = rank_order_dot_plot,
+  device = "png",
+  width = 8,    # Adjust the width as needed (in inches)
+  height = 6,   # Adjust the height as needed (in inches)
+  dpi = 300     # Adjust the resolution as needed
+)
+
+```
+
+```{r}
+#Remove Doublet Clusters
+
+proj = proj[!(proj$Clusters %in% c('C42', 'C95', 'C59',  'C97', 'C60', 'C45'))] #,
+```
+
+```{r}
+# Get the total number of cells in the ArchR project
+num_cells <- nCells(proj)
+
+# Print the number of cells
+cat("Number of cells in the ArchR project:", num_cells, "\n")
+
+```
+
+
+```{r}
+# Function to process UMAP, Harmony, and filter clusters based on mixed genotype percentage
+run_batch_correction_and_filter <- function(
+  proj, 
+  perc_cutoffs, # A vector of percentage cutoffs for each round
+  max_rounds = 1 # The maximum number of rounds to run
+) {
+  
+  # Loop through specified rounds
+  for (round in seq_len(min(max_rounds, length(perc_cutoffs)))) {
+    cat(paste0("\nStarting round ", round, " with cutoff: ", perc_cutoffs[round], "\n"))
+    
+    # Run UMAP, Harmony, and clustering on the project
+    proj <- UMAP_Harmony_clusters(proj)
+    
+    # Calculate mixed genotype percentages for each cluster
+    geno_stats <- geno_by_cluster(proj)
+    
+    # Identify clusters with mixed genotype percentage above the cutoff
+    clusters_to_remove <- geno_stats$Clusters[geno_stats$perc > perc_cutoffs[round]]
+    cat(paste0("Removing clusters: ", paste(clusters_to_remove, collapse = ", "), "\n"))
+    
+    # Filter out cells from clusters that have a high mixed genotype percentage
+    if (length(clusters_to_remove) > 0) {
+      cells_to_keep <- which(!(proj$Clusters %in% clusters_to_remove))
+      proj <- proj[cells_to_keep, ]
+    }
+  }
+  
+  return(proj)
+}
+
+```
+
+```{r}
+# Define percentage cutoffs and number of rounds
+percentage_cutoffs <- c(0.15, 0.15, 0.125, 0.125, 0.125) #, 0.15, 0.125, 0.125, 0.125, 0.10, 0.10, 0.10
+num_rounds <- 5
+
+# Run the function
+proj <- run_batch_correction_and_filter(
+  proj = proj,
+  perc_cutoffs = percentage_cutoffs,
+  max_rounds = num_rounds
+)
+```
+
+```{r}
+# Get the total number of cells in the ArchR project
+num_cells <- nCells(proj)
+
+# Print the number of cells
+cat("Number of cells in the ArchR project:", num_cells, "\n")
+
+```
+
+```{r}
+#UMAP + clustering over all cells and catalogue
+proj = UMAP_Harmony_clusters(proj)
+
+```
+
+
+```{r}
+proj_geno_by_cluster = geno_by_cluster(proj)
+
+proj_geno_by_cluster
+```
+
+
+```{r}
+# Create the rank-order dot plot of the mixed donor percentages using proj_geno_by_cluster
+rank_order_dot_plot <- ggplot(proj_geno_by_cluster, aes(x = reorder(Clusters, -perc), y = perc * 100)) +
+  geom_point(size = 3, color = "steelblue") +  # Use geom_point to create a dot plot
+  geom_hline(yintercept = 17.5, color = "red", linetype = "dotted", size = 1.2) +  # Add a red dotted line at y = 15
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid = element_blank(),
+    panel.border = element_rect(size = 1.5)
+  ) +
+  labs(
+    x = "Cluster",
+    y = "Percentage of Mixed Genotype (%)",
+    title = "Percentage of Mixed Genotype by Cluster (Rank-Ordered)"
+  )
+
+# Display the plot
+print(rank_order_dot_plot)
+
+# Save the plot to a file
+output_file <- "/location/for/figure/output/CUTAC_SouporCell_Doublets_per_Cluster_RankOrder_V2.png"
+ggsave(
+  filename = output_file,
+  plot = rank_order_dot_plot,
+  device = "png",
+  width = 8,    # Adjust the width as needed (in inches)
+  height = 6,   # Adjust the height as needed (in inches)
+  dpi = 300     # Adjust the resolution as needed
+)
+
+```
+
+```{r}
+#Depending on the clustering and the distribution of doublets you may want to continue to filter clusters by rerunning "run_batch_correction_and_filter"
+
+```
+
+
+```{r}
+    proj <- addClusters(input = proj, 
+                            method = "Seurat", 
+                            name = "Clusters", 
+                            reducedDims = "Harmony",  
+                            resolution = 1, 
+                            maxClusters = 15,
+                            verbose = FALSE,
+                            force=TRUE
+                           )
+```
+
+```{r}
+#Visualize clusters
+plotEmbedding(ArchRProj = proj, colorBy = "cellColData", 
+              name = "Sample", 
+              embedding = "UMAP_Harmony", 
+              size =0.5, 
+              #pal= paletteContinuous(), 
+              plotAs= "points", 
+              #imputeWeights = getImputeWeights(proj),
+              colorTitle = 'mark'
+             )+theme_void()+theme(plot.title = element_blank())#+ NoLegend()
+```
+
+
+```{r}
+proj <- addGeneScoreMatrix(proj, force = TRUE) #useTSS = FALSE, 
+
+proj <- addImputeWeights(proj)
+```
+
+```{r}
+markerGenes  <- c( 
+
+#HSC Genes 'ID3','ID4', 'MAFB', 
+    'MECOM','PRDM16','HOXB7', 'HOXB8', 'KLF4','ID1','FOXO1', 'NR4A1', 
+    'THY1', 'ITGA6', 'NECTIN3', 'KIT', #Cell Surface THY1 = CD90, ITGA6 = CD49F, NECTIN3 = CD133, KIT = CD117
+    #MEP Genes
+    'ZFPM1', #'GATA1',
+    'GYPA', #Cell Surface GYPA = CD235A
+    #CLP Genes
+    'IRF8','EBF1','DNTT','BLNK',
+    'MME','IL7R','CD7',    #Cell Surface MME = CD10, IL7R = CD127
+    #GMP Genes 'CEBPB',
+    'MPO','CEBPA','NLRC4',
+     #Cell Surface IL3RA = CD123 'IL3RA',
+    #Pre/Pro B-Cell Genes
+    'LEF1', #'TBX21', 'GATA3', 'XBP1', 'IRF8', 'REEP5'
+    'CD38', 'VPREB1', 'VPREB3', 'IL7R', 'CD81',  #Cell Surface MS4A1 = CD20, CR2 = CD21, MME = CD10, 'SDC1',
+    'RAG1', 'RAG2', 'TPO',
+     # B Cell Genes
+    'EBF1', 'PAX5', 'SPIB',
+    'CD19', 'MS4A1', 'CR2', #Cell Surface MS4A1 = CD20, CR2 = CD21, MME = CD10
+    'CD74',  'CD40', #'CD22',
+    #Monocytes
+    'SPI1', 'KLF4', 'CEBPA', 
+    'FCGR3A',  # 'ITGAM','CD68',
+    'SIGLEC7', 'SIGLEC9'
+)  
+
+CD34_Marker_Genes <- plotEmbedding(
+    ArchRProj = proj, 
+    colorBy = "GeneScoreMatrix", 
+    name = markerGenes, 
+    embedding = "UMAP_Harmony",
+    imputeWeights = getImputeWeights(proj))
+
+
+```
+
+```{r}
+library(ggplot2)
+library(RColorBrewer)
+
+# Assuming CD34_Marker_Genes is a list of ggplot objects
+out_dir <- "/location/for/figure/output/CUTAC_Marker_Genes_RdBu_r/"
+
+# Ensure the output directory exists
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Update the plots
+for (i in seq_along(CD34_Marker_Genes)) {
+    p <- CD34_Marker_Genes[[i]] +
+        geom_point(shape = 16, size = 1.5, alpha = 0.8) + # Shape 16 for filled circles, smaller size
+        scale_fill_gradientn(colors = rev(brewer.pal(11, "RdBu"))) + # RdBu_r color scale
+        theme_minimal(base_size = 15) + # Start with a clean minimal theme
+        theme(
+            panel.grid = element_blank(),      # Remove grid lines
+            panel.background = element_rect(fill = "white", color = NA), # White background
+            plot.background = element_rect(fill = "white", color = NA),  # White plot background
+            axis.title = element_blank(),      # Remove axis titles
+            axis.text = element_blank(),       # Remove axis text
+            axis.ticks = element_blank()       # Remove axis ticks
+        ) +
+        labs(title = paste0("Marker Gene: ", markerGenes[i])) # Optional: Add a title
+    ggsave(
+        filename = paste0(out_dir, "CD34_Marker_Gene_", i, ".pdf"),
+        plot = p,
+        width = 12,
+        height = 12
+    )
+}
+
+```
+
+
+```{r}
+#CLustering for resolution = 1, maxClusters = 15 
+
+##I USED THIS ONE butyou may need to reset these clusters based on your UMAP##
+
+proj$NewClusters <- ifelse(proj$Clusters %in% c('C8'), 'IE_Genes',
+                    ifelse(proj$Clusters %in% c('C3', 'C4', 'C5', 'C7', 'C10'), 'Center',      
+                    ifelse(proj$Clusters %in% c( 'C2'), 'Immune_Genes',
+                    ifelse(proj$Clusters %in% c('C9'), 'S_Phase',       
+                    ifelse(proj$Clusters %in% c('C1'), 'MEP',
+                    ifelse(proj$Clusters %in% c('C6'), 'PBMC',    
+                           'Other'))))))
+
+# Check the new clusters
+table(proj$NewClusters)
+
+```
+
+```{r}
+# Extract UMAP data
+umap_df <- proj@cellColData %>% data.frame()
+umap_df$UMAP_1 <- proj@embeddings$UMAP_Harmony$df[, 1]
+umap_df$UMAP_2 <- proj@embeddings$UMAP_Harmony$df[, 2]
+
+# Define sample order
+ord_new <- c(
+ "Center", "Immune_Genes", "MEP",  "S_Phase", "PBMC",  "IE_Genes" 
+
+)
+
+
+# Reorder the 'NewClusters' column
+umap_df$NewClusters <- factor(umap_df$NewClusters, levels = ord_new)
+umap_df <- umap_df[order(umap_df$NewClusters), ]
+
+# Get the ArchR stallion palette
+stallion_colors <- c(
+  
+  "#FFD700",  "#D2691E", "#208A42",  "#00CED1", 'grey', "#D147A3"
+  
+
+)
+
+# Define the output file path
+output_file <- "/location/for/figure/output/CUTAC_Cluster_UMAP_Final.png"
+
+umap_plot <- ggplot(umap_df, aes(
+  x = UMAP_1,
+  y = UMAP_2,
+  color = NewClusters
+)) +
+  geom_point(size = 0.5) +
+  theme_void() +
+  theme(
+    plot.title = element_blank(),
+    strip.text = element_blank(),
+    legend.position = c(1.5, .5),
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 10, face = "bold")
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 1))) +
+  scale_color_manual(
+    name = "NewClusters",
+    values = stallion_colors
+  )
+
+# Save the plot as a PNG file
+ggsave(
+  filename = output_file,
+  plot = umap_plot,
+  device = "png",
+  width = 6,   # Adjust the width as needed (in inches)
+  height = 6,  # Adjust the height as needed (in inches)
+  dpi = 300    # Adjust the resolution as needed
+)
+
+# Plot UMAP with 'Clusters' as the grouping variable
+ggplot(umap_df, aes(
+  x = UMAP_1,
+  y = UMAP_2,
+  color = NewClusters
+)) +
+  geom_point(size = 0.5) +
+  theme_void() +
+  theme(
+    plot.title = element_blank(),
+    strip.text = element_blank(),
+    legend.position = c(1.5, .5),
+    legend.text = element_text(size = 10),
+    legend.title = element_text(size = 10, face = "bold")
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 1))) +
+  scale_color_manual(
+    name = "NewClusters",
+    values = stallion_colors
+  )
+
+```
+
+
+```{r}
+markersGS <- getMarkerFeatures(
+    ArchRProj = proj, 
+    useMatrix = "GeneScoreMatrix", 
+    groupBy = "NewClusters",
+    bias = c("TSSEnrichment","log10(nFrags)"),
+   testMethod = "wilcoxon",
+   #maxCells = 500,
+   #scaleTo = 10^4,
+   #threads = getArchRThreads(),
+   #k = 100, 
+   #bufferRatio = 0.8,
+   #verbose = TRUE,
+  #logFile = createLogFile("getMarkerFeatures")
+)
+```
+
+```{r}
+
+markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.05 & Log2FC >= 1.0")
+write.csv(markerList$Center, file = "/location/for/tables/CUTAC_Center_FDR_0.05_Log2FC_1.csv", row.names = FALSE)
+
+markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.05 & Log2FC >= 1.0")
+write.csv(markerList$Immune_Genes, file = "/location/for/tables/CUTAC_Immune_Genes_FDR_0.05_Log2FC_1.csv", row.names = FALSE)
+
+markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.05 & Log2FC >= 1.0")
+write.csv(markerList$MEP, file = "/location/for/tables/CUTAC_MEP_FDR_0.05_Log2FC_1.csv", row.names = FALSE)
+
+markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.05 & Log2FC >= 1.0")
+write.csv(markerList$S_Phase, file = "/location/for/tables/CUTAC_S_Phase_FDR_0.05_Log2FC_1.csv", row.names = FALSE)
+
+markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.05 & Log2FC >= 1.0")
+write.csv(markerList$PBMC, file = "/location/for/tables/CUTAC_PBMC_FDR_0.05_Log2FC_1.csv", row.names = FALSE)
+
+markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.05 & Log2FC >= 1.0")
+write.csv(markerList$IE_Genes, file = "/location/for/tables/CUTAC_IE_Genes_FDR_0.05_Log2FC_1.csv", row.names = FALSE)
+
+```
+
+```{r}
+
+markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.05 & Log2FC <= -1.0")
+write.csv(markerList$Center, file = "/location/for/tables/CUTAC_Center_FDR_0.05_Log2FC_Neg_1.csv", row.names = FALSE)
+
+markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.05 & Log2FC <= -1.0")
+write.csv(markerList$Immune_Genes, file = "/location/for/tables/CUTAC_Immune_Genes_FDR_0.05_Log2FC_Neg_1.csv", row.names = FALSE)
+
+markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.05 & Log2FC <= -1.0")
+write.csv(markerList$MEP, file = "/location/for/tables/CUTAC_MEP_FDR_0.05_Log2FC_Neg_1.csv", row.names = FALSE)
+
+markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.05 & Log2FC <= -1.0")
+write.csv(markerList$S_Phase, file = "/location/for/tables/CUTAC_S_Phase_FDR_0.05_Log2FC_Neg_1.csv", row.names = FALSE)
+
+markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.05 & Log2FC <= -1.0")
+write.csv(markerList$PBMC, file = "/location/for/tables/CUTAC_PBMC_FDR_0.05_Log2FC_Neg_1.csv", row.names = FALSE)
+
+markerList <- getMarkers(markersGS, cutOff = "FDR <= 0.05 & Log2FC <= -1.0")
+write.csv(markerList$IE_Genes, file = "/location/for/tables/CUTAC_IE_Genes_FDR_0.05_Log2FC_Neg_1.csv", row.names = FALSE)
+
+```
+
+```{r}
+X = proj[proj$NewClusters %in% c('Center')]
+CD34_CellNames <- getCellNames(ArchRProj = X)
+write.table(CD34_CellNames, file='/location/for/tables/Cluster_Cell_Names/CUTAC_Center')
+
+X = proj[proj$NewClusters %in% c('Immune_Genes')]
+CD34_CellNames <- getCellNames(ArchRProj = X)
+write.table(CD34_CellNames, file='/location/for/tables/Cluster_Cell_Names/CUTAC_Immune_Genes')
+
+X = proj[proj$NewClusters %in% c('MEP')]
+CD34_CellNames <- getCellNames(ArchRProj = X)
+write.table(CD34_CellNames, file='/location/for/tables/Cluster_Cell_Names/CUTAC_MEP')
+
+X = proj[proj$NewClusters %in% c('S_Phase')]
+CD34_CellNames <- getCellNames(ArchRProj = X)
+write.table(CD34_CellNames, file='/location/for/tables/Cluster_Cell_Names/CUTAC_S_Phase')
+
+X = proj[proj$NewClusters %in% c('PBMC')]
+CD34_CellNames <- getCellNames(ArchRProj = X)
+write.table(CD34_CellNames, file='/location/for/tables/Cluster_Cell_Names/CUTAC_PBMC')
+
+X = proj[proj$NewClusters %in% c('IE_Genes')]
+CD34_CellNames <- getCellNames(ArchRProj = X)
+write.table(CD34_CellNames, file='/location/for/tables/Cluster_Cell_Names/CUTAC_IE_Genes')
+
+```
+
+
+```{r}
+saveArchRProject(
+  ArchRProj = proj,
+  outputDirectory = '/location/of/archR/files/CUTAC_Final_ArchR/',
+  overwrite = TRUE,
+  load = TRUE,
+  dropCells = FALSE,
+  logFile = createLogFile("saveArchRProject"),
+  threads = getArchRThreads()
+)
+
+```
+
+```{r}
+##You can use this chunk to reload your saved project###
+
+proj <- loadArchRProject(path = "/location/of/archR/files/CUTAC_Final_ArchR/", force = FALSE, showLogo = TRUE)
+
+getEmbedding(ArchRProj = proj, embedding = "UMAP_Harmony", returnDF = TRUE)
+
+
+```
+
+
+
+
+
+
+
+
